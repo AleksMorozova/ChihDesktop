@@ -1,0 +1,72 @@
+import { test, expect } from '@playwright/test';
+
+test('development CSS, HMR, light/dark themes and responsive layout work under CSP', async ({ page }) => {
+  const errors: string[] = [];
+  const responses: { url: string; status: number }[] = [];
+  const connections: string[] = [];
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('response', response => { if (/styles\.css|main\.tsx/.test(response.url())) responses.push({ url: response.url(), status: response.status() }); });
+  page.on('websocket', socket => connections.push(socket.url()));
+  await page.goto('http://127.0.0.1:5187/#main');
+  await expect(page.getByText('РЕЖИМ РАЗРАБОТКИ · ДЕМО-ДАННЫЕ', { exact: true })).toBeVisible();
+  await expect(page.locator('.app-shell')).toHaveCSS('display', 'flex');
+  await expect(page.locator('.sidebar')).toHaveCSS('position', 'fixed');
+  await expect(page.locator('.sidebar')).toHaveCSS('width', '235px');
+  await expect(page.locator('html')).toHaveCSS('font-family', /Segoe UI/);
+  expect(responses.length).toBeGreaterThanOrEqual(2);
+  expect(responses.every(response => response.status === 200)).toBe(true);
+  expect(await page.locator('style[data-vite-dev-id]').evaluateAll(styles => styles.every(style => !!(style as HTMLStyleElement).sheet && !!(style as HTMLStyleElement).nonce))).toBe(true);
+  await expect.poll(() => connections.length).toBeGreaterThan(0);
+  await page.getByLabel('Тема', { exact: true }).selectOption('light');
+  await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(247, 248, 245)');
+  await page.screenshot({ path: '../../artifacts/phase4-admin-fix/after-chrome-light.png', fullPage: true });
+  await page.getByLabel('Тема', { exact: true }).selectOption('dark');
+  await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(23, 29, 26)');
+  await page.screenshot({ path: '../../artifacts/phase4-admin-fix/after-chrome-dark.png', fullPage: true });
+  await page.setViewportSize({ width: 640, height: 900 });
+  await expect(page.locator('.sidebar')).toHaveCSS('width', '68px');
+  await expect(page.locator('.page-heading')).toHaveCSS('flex-direction', 'column');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(640);
+  await page.screenshot({ path: '../../artifacts/phase4-admin-fix/after-chrome-narrow.png', fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test('browser sample tasks are explicitly labeled and CRUD stays ephemeral', async ({ page }) => {
+  await page.goto('http://127.0.0.1:5187/');
+  await expect(page.getByRole('button', { name: 'ДЕМО · Разобрать заметки по проекту', exact: true })).toBeVisible();
+  await expect(page.getByText('Локальная база SQLite', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Задачи', exact: true }).click();
+  await page.getByRole('button', { name: 'Новая задача', exact: true }).click();
+  await page.getByLabel(/Название/).fill('Disposable browser demo task');
+  await page.getByRole('button', { name: 'Сохранить задачу', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Disposable browser demo task', exact: true })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('Только в памяти браузера');
+  await page.getByRole('button', { name: 'Завершить: Disposable browser demo task', exact: true }).click();
+  await page.getByRole('button', { name: 'Завершённые', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Disposable browser demo task', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Вернуть: Disposable browser demo task', exact: true }).click();
+  await page.getByRole('button', { name: 'Входящие', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Disposable browser demo task', exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Задачи', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Disposable browser demo task', exact: true })).toHaveCount(0);
+});
+
+test('production browser has correct external CSS and an expected native-only notice, never sample tasks', async ({ page }) => {
+  await page.goto('http://127.0.0.1:5188/');
+  await expect(page.getByText('ОТКРЫТО В ОБЫЧНОМ БРАУЗЕРЕ', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Откройте планировщик у Чиха' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Новая задача', exact: true })).toBeDisabled();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.locator('.app-shell')).toHaveCSS('display', 'flex');
+  const csp = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');
+  expect(csp).toContain("connect-src 'none'");
+  expect(csp).not.toContain('nonce-');
+  expect(csp).not.toContain('unsafe-inline');
+  expect(await page.locator('link[rel="stylesheet"]').count()).toBeGreaterThan(0);
+  const bundle = await page.locator('script[src]').first().getAttribute('src');
+  const response = await page.request.get(new URL(bundle!, page.url()).href);
+  expect(response.status()).toBe(200);
+  expect(await response.text()).not.toContain('ДЕМО · Разобрать заметки по проекту');
+});

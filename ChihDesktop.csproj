@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>0.3.0</Version>
+    <Authors>ChihDesktop</Authors>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ui/**;references/**;Assets/Backups/**;artifacts/**;.vs/**;TestResults/**;**/TestOutput/**</DefaultItemExcludes>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="tools/**/*.cs;ChihDesktop.Core/**/*.cs;ChihDesktop.Infrastructure/**/*.cs;tests/**/*.cs" />
+    <ProjectReference Include="ChihDesktop.Core/ChihDesktop.Core.csproj" />
+    <ProjectReference Include="ChihDesktop.Infrastructure/ChihDesktop.Infrastructure.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <InternalsVisibleTo Include="ChihDesktop.Tests" />
+    <Resource Include="Assets/Sprites/*.png" />
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+  <Target Name="RestoreAdminUi" Inputs="ui/chih-admin/package.json;ui/chih-admin/package-lock.json" Outputs="ui/chih-admin/node_modules/.package-lock.json" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="npm ci --no-audit --no-fund" WorkingDirectory="$(MSBuildProjectDirectory)/ui/chih-admin" />
+  </Target>
+  <Target Name="BuildAdminUi" BeforeTargets="PrepareForBuild;AssignTargetPaths;ComputeFilesToPublish" DependsOnTargets="RestoreAdminUi" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="npm run build" WorkingDirectory="$(MSBuildProjectDirectory)/ui/chih-admin" />
+    <ItemGroup>
+      <_AdminUiFile Include="ui/chih-admin/dist/**/*" />
+    </ItemGroup>
+    <ItemGroup>
+      <_AdminUiFile Update="@(_AdminUiFile)">
+        <TargetPath>AdminUi/%(_AdminUiFile.RecursiveDir)%(_AdminUiFile.Filename)%(_AdminUiFile.Extension)</TargetPath>
+      </_AdminUiFile>
+    </ItemGroup>
+    <ItemGroup>
+      <Content Include="@(_AdminUiFile)" Link="%(_AdminUiFile.TargetPath)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+  <Target Name="GuardReleasePrivacy" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <_PrivatePublishFile Include="@(ResolvedFileToPublish)" Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(ResolvedFileToPublish.RelativePath)', '(?i)(^|[/\\])(references|backups|logs|testoutput|node_modules|\.git|\.aws|\.codex)([/\\]|$)|\.(jpg|jpeg|log|bak|pfx|p12|pem|key)$|\.(db|sqlite|sqlite3)(-(wal|shm|journal))?$|(^|[/\\])(reminders[^/\\]*|user-settings[^/\\]*|appsettings[^/\\]*|settings|pet-settings)\.json$|(^|[/\\])\.env($|\.)|\.(invalid-|tmp-)|pre-v03-backup|schema-v0-backup|schedule-v1-backup'))" />
+    </ItemGroup>
+    <Error Condition="'@(_PrivatePublishFile)' != ''" Text="Release privacy guard rejected user data or private development files. Review publish inputs; do not ship this output." />
+  </Target>
+</Project>

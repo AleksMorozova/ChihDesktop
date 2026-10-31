@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="ChihDesktop.csproj" />
+  <Project Path="ChihDesktop.Core/ChihDesktop.Core.csproj" />
+  <Project Path="ChihDesktop.Infrastructure/ChihDesktop.Infrastructure.csproj" />
+  <Project Path="tests/ChihDesktop.Tests/ChihDesktop.Tests.csproj" />
+  <Project Path="tools/SpriteBuilder/SpriteBuilder.csproj" />
+</Solution>
