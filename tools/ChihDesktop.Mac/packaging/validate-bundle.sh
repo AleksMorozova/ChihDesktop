@@ -5,6 +5,7 @@ app="${1:?app required}"; publish="${2:?publish directory required}"; rid="${3:?
 version="${4:?version required}"; build="${5:?build required}"; work="${6:?fresh validation directory required}"
 here="$(cd "$(dirname "$0")" && pwd -P)"
 source "$here/architecture.sh"
+source "$here/native-dependencies.sh"
 arch="$(mac_arch_for_rid "$rid")"
 [[ ! -e "$work" && ! -L "$work" ]] || { echo 'Validation work directory must be fresh.' >&2; exit 1; }
 mkdir -p "$work"
@@ -30,22 +31,23 @@ for size in 16 32 128 256 512; do
   done
 done
 
-# No GUI is started: inspect native load commands and reject unresolved non-system dylibs.
-check_binary() {
-  local binary="$1" dependency candidate
+# Keep both otool views as evidence. Only -l identifies ID versus LOAD versus RPATH.
+capture_binary() {
+  local binary="$1" name
+  name="$(basename "$binary")"
   verify_macos_architecture "$rid" "$binary"
-  otool -arch "$arch" -L "$binary" > "$work/current-load-commands.txt"
-  cat "$work/current-load-commands.txt" >> "$work/native-dependencies.txt"
-  while IFS= read -r dependency; do
-    dependency="$(printf '%s' "$dependency" | sed -E 's/^[[:space:]]*//; s/[[:space:]]+\(compatibility version.*$//')"
-    case "$dependency" in
-      /System/Library/*|/usr/lib/*) ;;
-      @loader_path/*) candidate="$(dirname "$binary")/${dependency#@loader_path/}"; [[ -f "$candidate" ]] || { echo "Missing $candidate" >&2; return 1; };;
-      @executable_path/*) candidate="$app/Contents/MacOS/${dependency#@executable_path/}"; [[ -f "$candidate" ]] || { echo "Missing $candidate" >&2; return 1; };;
-      @rpath/*) candidate="${dependency#@rpath/}"; [[ -f "$app/Contents/MacOS/$candidate" || -f "$(dirname "$binary")/$candidate" ]] || { echo "Unresolved @rpath: $candidate" >&2; return 1; };;
-      *) echo "Unexpected native load path: $dependency" >&2; return 1;;
-    esac
-  done < <(tail -n +2 "$work/current-load-commands.txt")
+  otool -arch "$arch" -L "$binary" > "$work/$name.otool-L.txt"
+  otool -arch "$arch" -l "$binary" > "$work/$name.otool-l.txt"
+  native_dependency_records "$work/$name.otool-l.txt" > "$work/$name.records.txt"
+  printf '\nNative commands: %s (%s)\n' "$name" "$arch"
+  cat "$work/$name.records.txt"
+}
+capture_binary "$exe"
+while IFS= read -r -d '' library; do capture_binary "$library"; done < <(find "$app/Contents/MacOS" -type f -name '*.dylib' -print0)
+# No GUI or binary patching: reject real external LOAD commands, preserve ID metadata.
+check_binary() {
+  local binary="$1"
+  validate_native_dependencies "$binary" "$exe" "$app" "$work/$(basename "$binary").records.txt" "$work/ChihDesktop.records.txt"
 }
 check_binary "$exe"
 while IFS= read -r -d '' library; do check_binary "$library"; done < <(find "$app/Contents/MacOS" -type f -name '*.dylib' -print0)

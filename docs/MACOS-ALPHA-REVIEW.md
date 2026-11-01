@@ -59,3 +59,41 @@ runtime; no packaging script was executed as part of the syntax check.
 
 SpriteBuilder was not executed. Production artwork, user data, reminder schedules,
 phone automations and remote repository settings were not changed.
+
+## Follow-up: native dependency validator diagnosis
+
+The CI error `/usr/local/lib/libAvalonia.Native.OSX.dylib` is caused by treating
+every entry in `otool -L` as a runtime dependency. Apple's output includes the
+image's own `LC_ID_DYLIB`. Portable inspection of the actual local publish files
+found the following in **both** CPU slices of `libAvaloniaNative.dylib`:
+
+- `LC_ID_DYLIB /usr/local/lib/libAvalonia.Native.OSX.dylib` — identity metadata.
+- Actual `LC_LOAD_DYLIB` / `LC_LOAD_WEAK_DYLIB` commands reference only Apple
+  system libraries and frameworks. No load command in either payload requests
+  the `/usr/local/lib` Avalonia install name.
+- The universal library is included under its published name
+  `Contents/MacOS/libAvaloniaNative.dylib`; its SHA-256 in both raw publishes is
+  `42765B28691538BCFBE6ED3EC39AFC5C899B43CC9B7CF0CA550F91A0F1FC6533`.
+- The only non-system dependency in the inspected payloads is
+  `libmscordbi.dylib` → `LC_LOAD_DYLIB @rpath/libmscordaccore.dylib`.
+  That image declares `LC_RPATH @loader_path`, and its sibling target exists.
+
+The validator now classifies `otool -l` commands explicitly, excludes only
+`LC_ID_DYLIB` from dependency resolution, and resolves `@rpath` through declared
+image/main-executable run paths. Real external load commands, missing targets,
+external run paths and outside-bundle relative targets remain errors. This flat
+payload has no other inherited dependency-chain run paths; future native layout
+changes may require a fuller dyld graph resolver, rather than guessing directories.
+No Mach-O bytes were changed, so no install-name patching or re-signing was needed.
+
+Executed on Windows for this follow-up: Bash syntax checks, actionlint, 24 prior
+architecture checks, 39 new parser/dependency checks, and all 17 actual binary
+command sets per RID via portable byte extraction and otool-style replay. The
+native directory-symlink test is not run under Git Bash; macOS runs it too.
+These replay inputs are not claimed to be actual native `otool` output.
+
+The next workflow run captures real `otool -L` and `otool -l` output plus classified
+records for each image, before and after extraction, and uploads them under
+`ChihDesktop-macos-native-diagnostics-<RID>` even when packaging fails.
+**No new native Actions result has been obtained by the agent. Both architecture
+jobs must pass before this packaging change is considered natively verified.**

@@ -12,6 +12,7 @@ project="$(cd "$here/.." && pwd -P)"
 repo="$(cd "$here/../../.." && pwd -P)"
 cd "$project" # Select the Mac-only pinned global.json, never the WPF solution.
 bash "$here/test-architecture.sh"
+bash "$here/test-native-dependencies.sh"
 [[ ! -L "$repo/artifacts" && ! -L "$repo/artifacts/mac-alpha" ]] || { echo 'Symlink output parent rejected' >&2; exit 1; }
 out="$repo/artifacts/mac-alpha/$rid"
 [[ ! -e "$out" && ! -L "$out" ]] || { echo "Refusing to overwrite $out" >&2; exit 1; }

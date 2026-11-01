@@ -49,6 +49,16 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+      - name: Upload native load-command diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ChihDesktop-macos-native-diagnostics-${{ matrix.rid }}
+          path: |
+            artifacts/mac-alpha/${{ matrix.rid }}/check-*/*.otool-*.txt
+            artifacts/mac-alpha/${{ matrix.rid }}/check-*/*.records.txt
+          if-no-files-found: warn
+          retention-days: 14
       - name: Summarize scope
         run: |
           {
