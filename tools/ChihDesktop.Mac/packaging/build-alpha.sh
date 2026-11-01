@@ -3,13 +3,15 @@ set -euo pipefail
 [[ "$(uname -s)" == Darwin ]] || { echo 'Packaging requires macOS (iconutil/plutil/ditto/lipo).' >&2; exit 2; }
 rid="${1:?Usage: build-alpha.sh osx-arm64|osx-x64 build-number}"
 build="${2:?Build number required}"
-case "$rid" in osx-arm64) arch=arm64;; osx-x64) arch=x86_64;; *) echo 'Unsupported RID' >&2; exit 2;; esac
+here="$(cd "$(dirname "$0")" && pwd -P)"
+source "$here/architecture.sh"
+arch="$(mac_arch_for_rid "$rid")"
 [[ "$build" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || { echo 'Invalid numeric bundle build' >&2; exit 2; }
 [[ "$(uname -m)" == "$arch" ]] || { echo 'Use a native matching-architecture runner.' >&2; exit 2; }
-here="$(cd "$(dirname "$0")" && pwd -P)"
 project="$(cd "$here/.." && pwd -P)"
 repo="$(cd "$here/../../.." && pwd -P)"
 cd "$project" # Select the Mac-only pinned global.json, never the WPF solution.
+bash "$here/test-architecture.sh"
 [[ ! -L "$repo/artifacts" && ! -L "$repo/artifacts/mac-alpha" ]] || { echo 'Symlink output parent rejected' >&2; exit 1; }
 out="$repo/artifacts/mac-alpha/$rid"
 [[ ! -e "$out" && ! -L "$out" ]] || { echo "Refusing to overwrite $out" >&2; exit 1; }

@@ -3,7 +3,9 @@ set -euo pipefail
 [[ "$(uname -s)" == Darwin ]] || { echo 'Native bundle validation requires macOS.' >&2; exit 2; }
 app="${1:?app required}"; publish="${2:?publish directory required}"; rid="${3:?RID required}"
 version="${4:?version required}"; build="${5:?build required}"; work="${6:?fresh validation directory required}"
-case "$rid" in osx-arm64) arch=arm64;; osx-x64) arch=x86_64;; *) exit 2;; esac
+here="$(cd "$(dirname "$0")" && pwd -P)"
+source "$here/architecture.sh"
+arch="$(mac_arch_for_rid "$rid")"
 [[ ! -e "$work" && ! -L "$work" ]] || { echo 'Validation work directory must be fresh.' >&2; exit 1; }
 mkdir -p "$work"
 exe="$app/Contents/MacOS/ChihDesktop"
@@ -11,7 +13,7 @@ exe="$app/Contents/MacOS/ChihDesktop"
 [[ -f "$app/Contents/Resources/alpha-manifest.json" ]] || { echo 'Bundle manifest missing' >&2; exit 1; }
 plutil -lint "$app/Contents/Info.plist"
 file "$exe" | tee "$work/executable.txt"
-lipo -verify_arch "$arch" "$exe"
+verify_macos_architecture "$rid" "$exe"
 "$exe" --alpha-check-bundle "$app" "$publish" "$rid" "$version" "$build"
 
 # Decode the real ICNS with Apple's utility, then verify every standard/Retina size.
@@ -31,7 +33,7 @@ done
 # No GUI is started: inspect native load commands and reject unresolved non-system dylibs.
 check_binary() {
   local binary="$1" dependency candidate
-  lipo -verify_arch "$arch" "$binary"
+  verify_macos_architecture "$rid" "$binary"
   otool -arch "$arch" -L "$binary" > "$work/current-load-commands.txt"
   cat "$work/current-load-commands.txt" >> "$work/native-dependencies.txt"
   while IFS= read -r dependency; do
