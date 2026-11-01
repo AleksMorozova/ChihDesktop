@@ -15,14 +15,23 @@ internal sealed class PlannerTaskRow
     public long CreatedAtUtcTicks { get; set; }
     public long UpdatedAtUtcTicks { get; set; }
     public long? CompletedAtUtcTicks { get; set; }
+    public long? RemindAtUtcTicks { get; set; }
+    public long? SnoozedUntilUtcTicks { get; set; }
+    public long? DeliveredAtUtcTicks { get; set; }
+    public int ReminderStatus { get; set; }
     public long Revision { get; set; }
 
     public PlannerTask ToDomain() => PlannerTask.Restore(new(Id, Title, Description, (PlannerTaskStatus)Status,
         (PlannerPriority)Priority, (PlannerCategory)Category, DueDate, new(CreatedAtUtcTicks, TimeSpan.Zero),
-        new(UpdatedAtUtcTicks, TimeSpan.Zero), CompletedAtUtcTicks is { } ticks ? new DateTimeOffset(ticks, TimeSpan.Zero) : null, Revision));
+        new(UpdatedAtUtcTicks, TimeSpan.Zero), CompletedAtUtcTicks is { } ticks ? new DateTimeOffset(ticks, TimeSpan.Zero) : null, Revision,
+        RemindAtUtcTicks is {} r ? new DateTimeOffset(r, TimeSpan.Zero) : null,
+        SnoozedUntilUtcTicks is {} z ? new DateTimeOffset(z, TimeSpan.Zero) : null, (TaskReminderStatus)ReminderStatus,
+        DeliveredAtUtcTicks is {} d ? new DateTimeOffset(d, TimeSpan.Zero) : null));
 
     public void Apply(PlannerTask task)
     {
+        RemindAtUtcTicks = task.RemindAtUtc?.UtcTicks; SnoozedUntilUtcTicks = task.SnoozedUntilUtc?.UtcTicks;
+        DeliveredAtUtcTicks = task.DeliveredAtUtc?.UtcTicks; ReminderStatus = (int)task.ReminderStatus;
         Id = task.Id; Title = task.Title; Description = task.Description; Status = (int)task.Status;
         Priority = (int)task.Priority; Category = (int)task.Category; DueDate = task.DueDate;
         CreatedAtUtcTicks = task.CreatedAtUtc.UtcTicks; UpdatedAtUtcTicks = task.UpdatedAtUtc.UtcTicks;

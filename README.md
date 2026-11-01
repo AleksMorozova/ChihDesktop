@@ -1,10 +1,10 @@
 # ChihDesktop
 
-**v0.3.0 · Windows 10/11 · local-first desktop companion and planner**
+**v0.4.0 · Windows 10/11 · local-first desktop companion and planner**
 
 Chih is a local Windows 10/11 desktop cat: affectionate, lazy, slightly sarcastic, and convinced he is the household manager and a Senior .NET Developer. The existing 15 illustrated transparent PNG frames are preserved. No AI, cloud backend, account, GitHub connection or runtime Docker service is used.
 
-This is a release-preparation working tree, not an installer or a published release. See [the privacy checklist](docs/RELEASE-PRIVACY.md), [manual acceptance](docs/RELEASE-ACCEPTANCE.md) and [the R1 review](docs/R1-REVIEW.md). The owner has authorized the production artwork for the public repository and official releases under separate terms.
+Windows installer sources and self-contained publishing scripts are available in Phase R2.1; a binary release is not approved by these sources alone. See [installer/build instructions](docs/INSTALLER.md), [the privacy checklist](docs/RELEASE-PRIVACY.md), [manual acceptance](docs/RELEASE-ACCEPTANCE.md) and [the R1 review](docs/R1-REVIEW.md). The owner has authorized the production artwork for the public repository and official releases under separate terms.
 
 ## Screenshots
 
@@ -19,7 +19,7 @@ private previews are deliberately not used as screenshots.
 - Russian dialogue, gradual moods, petting responses and configurable frequency.
 - Local planner with task editing, due dates, priorities, categories,
   Inbox/Today/Upcoming/Completed views and persistent SQLite storage.
-- Native reminder management with daily/weekly/app-interval schedules,
+- React and native reminder management with daily/weekly/app-interval schedules,
   explicit acknowledgment, dismissal, snooze and retained occurrence history.
 - Optional owner personalization, modeless onboarding and opt-in per-user autostart.
 - Separate light/dark React administration window hosted in WebView2;
@@ -56,11 +56,11 @@ the working directory; audit the staged files and eventual release payload.
 ## Roadmap and limitations
 
 - Complete disposable-account Windows acceptance and public-source review.
-- Later: packaging, signing, prerequisite handling and binary dependency notices.
-- Later: broader localization and React reminder/settings management.
+- Validate the Inno installer on disposable Windows accounts; later add signing and release automation.
+- Later: broader localization and advanced reminder history/settings controls.
 - GitHub integration is postponed; its current navigation entry is only a placeholder.
 
-No installer, updater, cloud sync or GitHub API integration is supplied. Russian
+Inno installer sources are provided; no updater, cloud sync or GitHub API integration is supplied. Russian
 is the initial UI/dialogue language. Existing reminder timezone reassignment and
 recurrence-kind migration require an explicit future workflow. Mixed-DPI,
 sign-in startup and full upgrade/uninstall acceptance still need manual testing.
@@ -77,13 +77,13 @@ Third-party dependencies retain their own licenses and copyrights.
 
 ## For users
 
-Run ChihDesktop.exe from a complete application distribution with .NET 10 Desktop Runtime available. The planner window additionally needs Microsoft Edge WebView2 Runtime. Native setup, settings and reminders remain available without WebView2. End users do not need Node.js, npm, a .NET SDK, an internet connection or a GitHub account for onboarding.
+The self-contained win-x64 distribution includes .NET 10/WPF and SQLite; no separate .NET runtime is needed. The installer targets Windows 10 22H2+ or Windows 11 x64 and installs per user without administrator access. The planner additionally needs Microsoft Edge WebView2 Runtime. If missing, setup offers an optional Microsoft bootstrapper that requires internet; offline users can install Microsoft's Standalone Runtime separately. Native pet, setup, settings and reminders remain available without WebView2. End users need no Node.js, npm, .NET SDK, browser installation, Vite server or GitHub account. See [installation, upgrade and uninstall behavior](docs/INSTALLER.md). Unsigned binaries may trigger Windows SmartScreen; verify the release checksum and source.
 
 A clean profile starts with no tasks and no reminder definitions. Onboarding is modeless: Chih remains usable while it is open. It offers welcome, optional name/timezone, behavior/autostart choices, and an optional first reminder. Creating and enabling that reminder requires an explicit checkbox. Closing setup does not complete it; Finish or explicit Skip must be successfully saved. A draft with completion=false is saved for a new profile so restarting after closing setup does not silently complete it.
 
 Right-click Chih:
 
-- **Планировщик Чиха…** opens/activates the separate React/WebView2 task window.
+- **Open Admin / Планировщик Чиха…** opens/activates the separate React/WebView2 window with real tasks, reminders and settings. Closing it leaves the pet running; reopening creates a fresh bridge session, while repeated opening reuses the current window.
 - **Настройки Чиха…** opens native user settings; **Знакомство заново** reopens onboarding without resetting existing records.
 - **Напоминания — сегодня** displays pending and completed items.
 - **Настроить напоминания…** supports creation, editing titles/times/weekly days/enabled flags, quiet hours, and confirmed deletion of definitions.
@@ -98,7 +98,7 @@ Data lives under `%LOCALAPPDATA%\ChihDesktop`:
 
 | File/folder | Purpose |
 | --- | --- |
-| user-settings.json | General preferences, schema version 1 |
+| user-settings.json | General preferences, schema version 2 (reads legacy 0/1 without rewriting) |
 | reminders.json | Reminder definitions and occurrence state; versions 1/2 remain readable, new definitions use version 3 |
 | chih.db | SQLite planner tasks; unchanged EF schema |
 | WebView2 | Dedicated browser profile; only theme preference is kept in web localStorage |
@@ -129,11 +129,11 @@ Muting reminder notifications does not discard due occurrences. They stay pendin
 
 Opt-in autostart uses only the current user's `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value named ChihDesktop. No administrator access or system-wide registration is required. Repeated saves do not create duplicate entries. Registration failures prevent a successful settings result; failed settings commits attempt to restore the previous registration. Registry and JSON cannot form a single crash-atomic transaction: after a process crash between those operations, check the Windows Startup entry and the stored preference before retrying.
 
-An eventual uninstaller can invoke `ChihDesktop.exe --remove-autostart`. That removes only this registration and leaves user data intact. No installer/uninstaller packaging is implemented in R1. Real sign-in, path quoting, Windows Startup approval and uninstall behavior still require a disposable-account manual test. Automated tests use a mock adapter and do not change the machine's registry.
+The R2.1 Inno uninstaller invokes `ChihDesktop.exe --remove-autostart`. That removes only this registration and leaves user data intact. Upgrade preserves the stable installation path and existing startup entry; setup never opts users in. Real sign-in, path quoting, Windows Startup approval and uninstall behavior still require a disposable-account manual test. Automated tests use a mock adapter and do not change the machine's registry.
 
 ## Development and verification
 
-Developers need .NET 10 SDK and Node.js 24. Desktop build uses the committed npm lockfile and bundles Vite output into AdminUi. Shipped users need neither development toolchain. On Windows stop this project's Vite process before npm ci, because its native bundler module may be locked.
+Developers need .NET 10 SDK, Node.js 24 and PowerShell 7.4+ for release scripts/installer tests. Desktop build uses the committed npm lockfile and bundles Vite output into AdminUi. Shipped users need neither development toolchain. Installer builders additionally need Inno Setup 6.4+; exact commands are in [INSTALLER.md](docs/INSTALLER.md). On Windows stop this project's Vite process before npm ci, because its native bundler module may be locked.
 
 Use a Windows checkout with the .NET desktop workload available. After the build,
 launch the actual desktop host with `dotnet run --project ChihDesktop.csproj`;
@@ -164,6 +164,40 @@ It uses the real AdminWindow/bridge/SQLite with synthetic tasks and isolated dat
 
 Browser-only visual development uses `npm --prefix ui/chih-admin run dev`. A persistent DEMO banner identifies in-memory synthetic tasks that reset on reload. Production browser previews have no native bridge and show an expected instruction instead of fake saved tasks. Real WebView2 always uses .NET application services and SQLite; native errors never trigger a mock fallback. Development CSP nonces permit Vite-injected styles and loopback HMR; production keeps a restrictive local-file CSP and no HTTP backend.
 
-The React Settings action opens the same native settings/onboarding window. Reminder editing remains native; a full React reminder/settings editor, broader localization, GitHub integration, installer/signing and release automation are deferred.
+React Reminders lists definitions and pending/today occurrences from the same native scheduler, with create/edit, enable/disable, confirmed definition deletion, ten-minute snooze, explicit completion and dismissal. Each grouped item is independent; closing the admin window does not acknowledge anything. React Settings edits the existing UserSettingsService profile, retaining unexposed preferences and rejecting stale edits. It also opens native settings/onboarding for advanced controls. Quiet hours for reminder scheduling remain in the native reminder editor. No second settings/reminder store exists in JavaScript. Broader localization, GitHub integration, signing and release automation remain deferred.
+
+For this working-tree integration, launch `artifacts/admin-integration/production-final/ChihDesktop.exe`, then right-click Chih → **Open Admin / Планировщик Чиха…**. Exit an older running copy first: single-instance behavior intentionally keeps the existing process. The earlier R2.1 installer contains its earlier payload and is not automatically rebuilt by admin changes. See [admin integration verification](docs/ADMIN-INTEGRATION.md) for tested workflows and limitations.
+
+The real Windows context-menu closing race is fixed and user-verified; see
+[runtime diagnosis and log collection](docs/ADMIN-RUNTIME-DIAGNOSIS.md). Technical
+admin-opening logs are stored under `%LOCALAPPDATA%/ChihDesktop/logs`, without
+task/reminder contents or settings values. The production-final folder includes
+this correction; the older installer has not been rebuilt.
 
 The three historical workflow suites still execute 94 persistence/artwork + 65 scheduling + 35 personality assertions. Fixtures are synthetic. Assertions that previously expected automatic installation of a personal schedule now require exact legacy retention and verified pre-write backups. Additional tests cover planner CRUD, bridge isolation, user settings, onboarding, autostart through mocks, timezone transitions and release privacy. Hash tests protect all 15 source PNGs and embedded bytes; they do not execute SpriteBuilder. Legacy asset-generation/alignment utilities are not part of build or runtime and must not be used during R1 verification.
+
+## Task Companion (v0.4.0)
+
+Right-click Chih → **Мои задачи…** for a native task list that works without WebView2.
+It shows today's incomplete/overdue tasks and outstanding delivered task reminders,
+with completion, snooze and dismissal controls. Use the toggle for future/undated tasks.
+The full React editor now supports an optional one-time reminder independently of the
+calendar due date. Configure it explicitly; clean installs contain no tasks or schedules.
+
+Task reminders share Chih's focus-safe bubble, retain delivery state in SQLite, and never
+turn closing a bubble into task completion. Settings control notifications, title privacy,
+completion reactions and opt-in occasional summaries. Existing recurring JSON reminders
+remain separate. See [Task Companion architecture, migration, crash tradeoffs and manual
+checks](docs/TASK-COMPANION.md). The old installer has not been rebuilt for this version.
+
+## Windows acceptance build
+
+All pet menu commands wait for the WPF context menu's Closed event, with technical
+command diagnostics and visible failure reporting. Explicit “Погладить Чиха” gives
+a varied response when personality, quiet hours and reminder priority allow it;
+rapid gestures coalesce. Settings and the reminder center restore and reuse normal
+windows. Google Calendar and GitHub are Coming Soon placeholders only.
+
+The owner-approved pink-paw Chih icon is embedded in the application, normal WPF
+windows and local installer. See [Windows acceptance review](docs/WINDOWS-UAT.md)
+for the command-by-command test table, artifact paths and remaining manual checks.

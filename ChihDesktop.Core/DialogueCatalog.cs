@@ -1,12 +1,15 @@
 namespace ChihDesktop;
 
-public enum DialogueCategory { Break, Lunch, Dinner, Medication, Exercise, Petting, Coding, Sleep, Random }
+public enum DialogueCategory { Break, Lunch, Dinner, Medication, Exercise, Petting, Coding, Sleep, Random, TaskReminder, TaskCompletion, TaskSummary }
 
 public static class DialogueCatalog
 {
     // Original local text. No generated responses, services or network requests.
     public static IReadOnlyDictionary<DialogueCategory, string[]> Phrases { get; } = new Dictionary<DialogueCategory, string[]>
     {
+        [DialogueCategory.TaskReminder] = ["{ownerName}, твой план ждёт внимания. Я пока присмотрю.", "Напоминание доставлено. Лапой галочку ставишь ты.", "Дело по расписанию. Чих проверил часы.", "Твой план зовёт. Я обеспечу моральное мурчание."],
+        [DialogueCategory.TaskCompletion] = ["О, готово. А я уже собирался контролировать.", "Ещё одно дело сделано. Моя руководящая роль очевидна.", "Готово? Одобряю. Можно потянуться.", "Галочка на месте. Пушистый отдел доволен."],
+        [DialogueCategory.TaskSummary] = ["{ownerName}, планы на сегодня ждут в «Моих задачах». Я рядом.", "Список дел под присмотром. Присматриваю преимущественно лёжа.", "Твои задачи в меню Чиха. Мой план — немного поспать.", "Проверим планы? Я уже мысленно открыл список."],
         [DialogueCategory.Break] =
         [
             "Перерыв объявлен. Начальник уже растянулся.",
@@ -54,6 +57,14 @@ public static class DialogueCatalog
         ],
         [DialogueCategory.Petting] =
         [
+            "Мррр... продолжай.",
+            "Я вообще-то занят. Но ладно.",
+            "Мур. Только никому не рассказывай.",
+            "О, вот это обслуживание!",
+            "Ещё немного — и я тебя повышу.",
+            "Мрр... кажется, ты мне нравишься.",
+            "Я не мурчу. Это компьютер шумит.",
+            "Ладно, сегодня можно.",
             "Да, вот тут. Наконец-то грамотная постановка лапозадачи.",
             "{ownerName}, качество поглаживания принято на ревью.",
             "Мур. Продолжай, это важная встреча.",
@@ -90,4 +101,3 @@ public static class DialogueCatalog
         ]
     };
 }
-

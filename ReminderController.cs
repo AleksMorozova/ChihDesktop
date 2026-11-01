@@ -9,6 +9,8 @@ namespace ChihDesktop;
 public sealed class ReminderController : IDisposable
 {
     private readonly Window owner;
+    private readonly TaskCompanionDelivery? companion;
+    private readonly UserSettingsService? companionSettings;
     private readonly IReminderCommands scheduler;
     private readonly IReminderPresenter bubble;
     private readonly TimeProvider clock;
@@ -23,12 +25,14 @@ public sealed class ReminderController : IDisposable
     private ReminderCenter? center;
     private bool disposed;
     private string? lastNotifiedError;
+    private string? lastManualPetReply;
+    private DateTimeOffset lastManualPetAt;
 
     public bool PersonalityEnabled => personality.Enabled;
 
     public ReminderController(Window owner, Func<bool> interactionBlocked, Func<CatState> catState,
         IReminderCommands commands, IReminderPresenter presenter, PersonalityService personality,
-        TimeProvider clock, ILogger<ReminderController> logger)
+        TimeProvider clock, ILogger<ReminderController> logger, IPlannerService? planner = null, UserSettingsService? settings = null, TaskListWindowManager? tasks = null, AdminDiagnostics? diagnostics = null)
     {
         this.owner = owner;
         this.interactionBlocked = interactionBlocked;
@@ -38,6 +42,8 @@ public sealed class ReminderController : IDisposable
         this.clock = clock;
         this.logger = logger;
         bubble = presenter;
+        companionSettings = settings; if (settings is not null) settings.Changed += OnCompanionSettings;
+        if (planner is not null && settings is not null && tasks is not null) { companion = new(planner, settings, commands, clock, tasks, logger, personality, () => { autoHide.Stop(); autoHide.Interval = TimeSpan.FromSeconds(45); autoHide.Start(); }, diagnostics); companion.Start(); }
         bubble.ActionRequested += OnBubbleAction;
         bubble.DialogueDismissRequested += HideBubble;
         autoHide.Tick += (_, _) => HideBubble();
@@ -65,9 +71,10 @@ public sealed class ReminderController : IDisposable
         personality.Update(now, scheduler.LocalNow(now), delta, DesktopActivity.IdleTime(), catState());
         if (resumed) personality.DeferSpontaneous(now);
         center?.RefreshForDateChange();
-        if (bubble.Occurrences.Count > 0 && !bubble.Occurrences.Any(o => scheduler.MayNotify(o, now))) HideBubble();
+        if (companion?.Active != true && bubble.Occurrences.Count > 0 && !bubble.Occurrences.Any(o => scheduler.MayNotify(o, now))) HideBubble();
         bool fullscreen = DesktopActivity.IsFullscreenApp();
         bool quiet = personality.IsQuiet(scheduler.LocalNow(now), scheduler.IsQuiet(now));
+        if (companion?.Active == true) _ = companion.RefreshActiveAsync(bubble);
         if (bubble.IsDialogue && (!personality.Enabled || quiet || fullscreen || interactionBlocked())) HideBubble();
         if (interactionBlocked()) return;
         // A scheduled reminder preempts chatter, but never another reminder.
@@ -75,8 +82,15 @@ public sealed class ReminderController : IDisposable
         var next = scheduler.TakeNextGroup(now);
         if (next is not null) { Present(next); return; }
         if (bubble.IsVisible) return;
+        if (companion is not null) _ = companion.PollAsync(bubble, () => disposed || interactionBlocked() || scheduler.HasWaitingNotification(clock.GetUtcNow()));
         var phrase = personality.Spontaneous(now, !quiet && !fullscreen);
         if (phrase is not null) PresentDialogue(phrase);
+    }
+
+    private void OnCompanionSettings()
+    {
+        if (!owner.Dispatcher.CheckAccess()) { owner.Dispatcher.BeginInvoke(OnCompanionSettings); return; }
+        if (!disposed && companion?.Active == true) HideBubble();
     }
 
     private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
@@ -94,7 +108,7 @@ public sealed class ReminderController : IDisposable
             lastNotifiedError = null;
             if (bubble.IsStoreNotice) HideBubble();
         }
-        if (bubble.Occurrences.Count > 0)
+        if (companion?.Active != true && bubble.Occurrences.Count > 0)
         {
             var latest = scheduler.GetPresentation();
             if (!latest.Any(o => scheduler.MayNotify(o, clock.GetUtcNow()))) HideBubble();
@@ -124,6 +138,7 @@ public sealed class ReminderController : IDisposable
 
     private void Present(IReadOnlyList<ReminderOccurrence> occurrences)
     {
+        companion?.Close(); // An explicit recurring-reminder preview can preempt a task bubble.
         // The new group is already recorded at the command boundary. Clear only the old visual.
         autoHide.Stop();
         bubble.HideReminder();
@@ -139,6 +154,7 @@ public sealed class ReminderController : IDisposable
     private void HideBubble()
     {
         autoHide.Stop();
+        companion?.Close();
         // A save callback can already have selected a newer group while an older visual is closing.
         scheduler.ClosePresentation(bubble.Occurrences.Select(o => o.Id).ToArray());
         bubble.HideReminder();
@@ -151,22 +167,25 @@ public sealed class ReminderController : IDisposable
         autoHide.Start();
     }
 
-    private bool MayChat(DateTimeOffset now) => !interactionBlocked() && !bubble.IsVisible &&
+    private bool MayChat(DateTimeOffset now, bool replaceDialogue = false) => !interactionBlocked() && (!bubble.IsVisible || replaceDialogue && bubble.IsDialogue) &&
         !personality.IsQuiet(scheduler.LocalNow(now), scheduler.IsQuiet(now)) && !DesktopActivity.IsFullscreenApp() &&
         !scheduler.HasWaitingNotification(now);
 
-    public void Pet()
+    public void Pet(bool requested = false)
     {
         var now = clock.GetUtcNow();
         personality.Pet(now);
-        var phrase = personality.PetReply(now, MayChat(now));
+        var phrase = personality.PetReply(now, MayChat(now, requested), requested);
+        if (requested && phrase is null && personality.Enabled && MayChat(now, true) && now - lastManualPetAt < TimeSpan.FromSeconds(3))
+            phrase = lastManualPetReply; // Coalesce rapid menu gestures into the same visible response.
+        else if (requested && phrase is not null) { lastManualPetReply = phrase; lastManualPetAt = now; }
         if (phrase is not null) PresentDialogue(phrase);
     }
 
     public void RequestPhrase(bool random)
     {
         var now = clock.GetUtcNow();
-        var phrase = personality.RequestedPhrase(now, MayChat(now), random);
+        var phrase = personality.RequestedPhrase(now, MayChat(now, true), random);
         if (phrase is not null) PresentDialogue(phrase);
     }
 
@@ -185,6 +204,7 @@ public sealed class ReminderController : IDisposable
 
     private void OnBubbleAction(ReminderOccurrence occurrence, string action)
     {
+        if (occurrence.ReminderId == "task-companion") { if (companion is not null) _ = companion.ActAsync(bubble, action); return; }
         if (action == "snooze") scheduler.Snooze(occurrence.Id, clock.GetUtcNow());
         else scheduler.Acknowledge(occurrence.Id, action == "done", clock.GetUtcNow());
     }
@@ -203,11 +223,13 @@ public sealed class ReminderController : IDisposable
     {
         if (center is null)
         {
-            center = new ReminderCenter(scheduler, ShowOccurrence, clock) { Owner = owner, Topmost = owner.Topmost };
+            center = new ReminderCenter(scheduler, ShowOccurrence, clock);
             center.Closed += (_, _) => center = null;
         }
         center.SelectTab(settings);
+        if (center.WindowState == WindowState.Minimized) center.WindowState = WindowState.Normal;
         center.Show();
+        new WindowPositionService(center).FitToWorkArea();
         center.Activate(); // Only this explicit menu action opens a focused editor.
     }
 
@@ -229,7 +251,8 @@ public sealed class ReminderController : IDisposable
         scheduler.Changed -= OnChanged;
         scheduler.OperationFailed -= OnOperationFailed;
         center?.Close();
+        if (companionSettings is not null) companionSettings.Changed -= OnCompanionSettings;
+        companion?.Dispose();
         bubble.Dispose();
     }
 }
-

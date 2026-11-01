@@ -26,10 +26,11 @@ public class UserSettingsStore(string? path = null, Func<UserSettings>? defaults
             string json = reader.ReadToEnd();
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("SchemaVersion", out var schema) || !schema.TryGetInt32(out int version)) throw new JsonException();
-            if (version is not (0 or 1)) return new(State.Unsupported, bytes);
+            if (version is not (0 or 1 or 2)) return new(State.Unsupported, bytes);
             var data = JsonSerializer.Deserialize<UserSettings>(json, Options) ?? throw new JsonException();
-            // v0 draft used the same fields; normalize only in memory, never rewrite on load.
-            data = (data with { SchemaVersion = 1 }).Validate();
+            // v0/v1 preferences retain their values. New fields use safe defaults.
+            // Normalize only in memory; never rewrite or touch autostart on load.
+            data = (data with { SchemaVersion = 2 }).Validate();
             return new(State.Valid, bytes, data, version);
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or DecoderFallbackException) { return new(State.Corrupt, bytes); }

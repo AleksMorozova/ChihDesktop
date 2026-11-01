@@ -46,4 +46,24 @@ pass initialized local Git only; see [the current review](RELEASE-READINESS.md).
 - [x] Debug/Release builds: zero warnings/errors, 152 .NET tests passed each; 28 frontend tests, production build, 3 automated Chrome tests and isolated native WebView2/SQLite smoke passed. See RELEASE-READINESS.md. Manual acceptance remains separate.
 - [ ] Inspect final future payload for databases, JSON profiles, logs, backups, certificates/keys, original photos and source maps.
 
+## R2.1 installer gate
+
+- [x] Release scripts accept only fresh artifact destinations, preserve failed outputs, and never clean personal data or execute SpriteBuilder.
+- [x] Inno sources use per-user application binaries under LocalAppData/Programs, a stable AppId and the existing application mutex. No install-time autostart registration or personal-data delete section exists.
+- [x] The generated payload validator checks self-contained WPF/native SQLite, local frontend files, embedded sprite hashes and prohibited private/development paths; manifest verification precedes installer compilation.
+- [x] Compile with Inno Setup 7.1.1 and inspect the controlled compiler input inventory: all 496 verified payload files plus one valid Microsoft-signed bootstrapper, with no unexpected/private inputs. EXE SHA-256 matches its checksum sidecar. This was not independent archive extraction; installer execution remains NOT RUN until recorded in RELEASE-ACCEPTANCE.md.
+- [ ] Review the generated NuGet/runtime/frontend dependency notices and verified Microsoft bootstrapper against the exact distributable before publication.
+- [ ] Complete disposable-account installation, upgrade and retained-data uninstall acceptance, including online/offline missing-WebView2 paths and unsigned/SmartScreen behavior.
+
 No Dockerfile or runtime Docker requirement is introduced. Phone automations, GitHub integration and cloud services are outside R1 and remain untouched.
+
+## Approved branding and current payload
+
+The owner-supplied Assets/Branding/chih-icon.png and chih-icon.ico are approved for
+official application/installer branding under ASSET-LICENSE.md. Both remain
+unchanged, and the PNG has no text metadata
+chunks. Original photographs/references/backups remain excluded. The validated
+acceptance payload contains only the application, approved embedded graphics,
+frontend assets and dependency/license files. Installer compiler inputs are checked
+against that manifest plus a signature-verified Microsoft WebView2 bootstrapper.
+No actual installation or upgrade against private data is claimed.

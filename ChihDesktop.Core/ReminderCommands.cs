@@ -105,6 +105,25 @@ public sealed class ReminderCommands : IReminderCommands
             return scheduler.SettingsChanged();
         });
 
+    public ReminderCommandResult UpdateReminder(ReminderDefinition edit) => Execute(() =>
+    {
+        var current = scheduler.Data.Reminders.FirstOrDefault(r => r.Id == edit.Id);
+        if (current is null || string.IsNullOrWhiteSpace(edit.Title) || edit.Title.Trim().Length > 200 ||
+            edit.IntervalMinutes is < 1 or > 1440 || !Enum.IsDefined(edit.WeeklyDay) ||
+            edit.Recurrence != current.Recurrence || edit.TimeZoneId != current.TimeZoneId) return false;
+        current.Title = edit.Title.Trim(); current.Time = edit.Time; current.WeeklyDay = edit.WeeklyDay;
+        current.IntervalMinutes = edit.IntervalMinutes; current.Enabled = edit.Enabled; current.BypassQuietHours = edit.BypassQuietHours;
+        return scheduler.SettingsChanged(edit.Id); // Never reset unrelated interval timers or replace other definitions/history.
+    });
+
+    public ReminderCommandResult SetReminderEnabled(string id, bool enabled) => Execute(() =>
+    {
+        var current = scheduler.Data.Reminders.FirstOrDefault(r => r.Id == id);
+        if (current is null) return false;
+        current.Enabled = enabled;
+        return scheduler.SettingsChanged(id);
+    });
+
     public ReminderCommandResult UpdatePersonality(PersonalityOptions options) => Execute(() =>
     {
         if (options.MinimumCommentIntervalMinutes is < 1 or > 1440) return false;
@@ -130,7 +149,7 @@ public sealed class ReminderCommands : IReminderCommands
         proposed.Reminders.Add(copy); proposed.Version = 3;
         try { ReminderDataCodec.Validate(proposed); } catch (System.Text.Json.JsonException) { return false; }
         scheduler.Data.Reminders.Add(copy); scheduler.Data.Version = 3;
-        return scheduler.SettingsChanged();
+        return scheduler.SettingsChanged(copy.Id);
     });
 
     public ReminderCommandResult DeleteReminder(string id) => Execute(() =>
@@ -138,7 +157,7 @@ public sealed class ReminderCommands : IReminderCommands
         var definition = scheduler.Data.Reminders.FirstOrDefault(r => r.Id == id);
         if (definition is null) return false;
         scheduler.Data.Reminders.Remove(definition);
-        return scheduler.SettingsChanged(); // Keep every historical occurrence and acknowledgment.
+        return scheduler.SettingsChanged(id); // Keep every historical occurrence, acknowledgment and unrelated interval timer.
     });
 
     public IReadOnlyList<ReminderOccurrence>? AddTestGroup(string id, DateTimeOffset now)

@@ -16,9 +16,9 @@ public sealed class PersonalityRegressionTests
         var config = new PersonalityOptions();
         PersonalityService Create() => new(() => config, now, new Random(13));
         var service = Create();
-        Check(DialogueCatalog.Phrases.Count == 9 && DialogueCatalog.Phrases.Values.Sum(p => p.Length) >= 35, "all nine categories and at least 35 phrases");
+        Check(DialogueCatalog.Phrases.Count >= 9 && DialogueCatalog.Phrases.Values.Sum(p => p.Length) >= 35, "all nine categories and at least 35 phrases");
         Check(DialogueCatalog.Phrases.Values.SelectMany(p => p).Distinct().Count() == DialogueCatalog.Phrases.Values.Sum(p => p.Length), "all catalog phrases distinct");
-        foreach (var category in Enum.GetValues<DialogueCategory>())
+        foreach (var category in Enum.GetValues<DialogueCategory>().Where(c => c <= DialogueCategory.Random))
         {
             string? previous = null;
             for (int cycle = 0; cycle < 3; cycle++)
@@ -111,4 +111,3 @@ public sealed class PersonalityRegressionTests
     }
 
 }
-

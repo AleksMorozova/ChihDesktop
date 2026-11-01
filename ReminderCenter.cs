@@ -26,9 +26,10 @@ public sealed class ReminderCenter : Window
         this.scheduler = scheduler;
         this.clock = clock ?? TimeProvider.System;
         this.showOccurrence = showOccurrence;
+        AppBranding.Apply(this);
         Title = "Чих — напоминания 🐾";
         Width = 720; Height = 650; MinWidth = 560; MinHeight = 400;
-        ShowInTaskbar = false;
+        ShowInTaskbar = true;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         tabs.Items.Add(new TabItem { Header = "Сегодня", Content = Scroll(today) });
         tabs.Items.Add(new TabItem { Header = "Настройки", Content = Scroll(settings) });

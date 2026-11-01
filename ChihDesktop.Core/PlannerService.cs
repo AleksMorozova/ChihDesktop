@@ -35,8 +35,30 @@ public interface IPlannerService
     Task<PlannerResult<IReadOnlyList<PlannerTaskDto>>> GetTasksAsync(PlannerQuery? query = null, CancellationToken cancellationToken = default);
 }
 
-public sealed class PlannerService(IPlannerTaskStore store, TimeProvider clock, Func<string>? preferredTimeZone = null) : IPlannerService
+public interface IPlannerActivity { event Action? TaskCompleted; }
+
+public interface ITaskReminderCommands
 {
+    Task<PlannerResult<PlannerTaskDto>> ChangeReminderAsync(Guid id, string action, long expectedRevision, CancellationToken cancellationToken = default);
+}
+
+public sealed class PlannerService(IPlannerTaskStore store, TimeProvider clock, Func<string>? preferredTimeZone = null) : IPlannerService, ITaskReminderCommands, IPlannerActivity
+{
+    public event Action? TaskCompleted;
+    public async Task<PlannerResult<PlannerTaskDto>> ChangeReminderAsync(Guid id, string action, long expectedRevision, CancellationToken cancellationToken = default)
+    {
+        if (id == Guid.Empty || expectedRevision < 1 || action is not ("deliver" or "snooze" or "dismiss"))
+            return Invalid<PlannerTaskDto>("Проверьте действие и версию задачи.");
+        bool eligible = false;
+        var result = Map(await store.ChangeAsync(id, task =>
+        {
+            var now = clock.GetUtcNow();
+            eligible = task.Status == PlannerTaskStatus.Active && task.RemindAtUtc is not null && (action != "deliver" || task.ReminderDue(now));
+            return eligible && task.ChangeReminder(action, now);
+        }, expectedRevision, cancellationToken).ConfigureAwait(false));
+        return result.Success && !eligible ? Invalid<PlannerTaskDto>("У задачи нет подходящего активного напоминания. Обновите список.") : result;
+    }
+
     private static readonly TimeZoneInfo Kyiv = FindKyiv();
     private static TimeZoneInfo FindKyiv()
     {
@@ -78,7 +100,12 @@ public sealed class PlannerService(IPlannerTaskStore store, TimeProvider clock, 
     {
         if (cancellationToken.IsCancellationRequested) return Cancelled<PlannerTaskDto>();
         if (id == Guid.Empty) return Invalid<PlannerTaskDto>("Укажите ID задачи.");
-        return Map(await store.ChangeAsync(id, task => task.Complete(clock.GetUtcNow()), null, cancellationToken).ConfigureAwait(false));
+        bool changed = false;
+        var result = Map(await store.ChangeAsync(id, task => changed = task.Complete(clock.GetUtcNow()), null, cancellationToken).ConfigureAwait(false));
+        if (result.Success && changed && TaskCompleted is { } observers)
+            foreach (Action observer in observers.GetInvocationList())
+                try { observer(); } catch { /* Presentation failure cannot undo a durable completion. */ }
+        return result;
     }
 
     public async Task<PlannerResult<PlannerTaskDto>> ReopenTaskAsync(Guid id, CancellationToken cancellationToken = default)

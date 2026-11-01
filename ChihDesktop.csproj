@@ -6,7 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.3.0</Version>
+    <ApplicationIcon>Assets/Branding/chih-icon.ico</ApplicationIcon>
+    <Version>0.4.0</Version>
     <Authors>ChihDesktop</Authors>
     <DefaultItemExcludes>$(DefaultItemExcludes);ui/**;references/**;Assets/Backups/**;artifacts/**;.vs/**;TestResults/**;**/TestOutput/**</DefaultItemExcludes>
   </PropertyGroup>
@@ -17,7 +18,9 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <InternalsVisibleTo Include="ChihDesktop.Tests" />
+    <InternalsVisibleTo Include="AdminWebViewSmoke" />
     <Resource Include="Assets/Sprites/*.png" />
+    <Resource Include="Assets/Branding/chih-icon.ico" />
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
   </ItemGroup>
   <Target Name="RestoreAdminUi" Inputs="ui/chih-admin/package.json;ui/chih-admin/package-lock.json" Outputs="ui/chih-admin/node_modules/.package-lock.json" Condition="'$(DesignTimeBuild)' != 'true'">

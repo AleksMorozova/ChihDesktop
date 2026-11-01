@@ -24,3 +24,13 @@ describe('versioned contracts', () => {
     expect(responseSchema.safeParse({ protocolVersion: 1, requestId: task.id, operation: 'planner.get', success: true, data: task, error: { code: 'x', message: 'x' } }).success).toBe(false);
   });
 });
+
+describe('task reminder contracts', () => {
+  it('requires an offset for an instant and keeps due date independent', () => {
+    expect(taskInputSchema.safeParse({ title: 'Synthetic', description: null, priority: 'Normal', category: 'Work', dueDate: null, remindAtUtc: '2026-11-01T12:00:00Z' }).success).toBe(true);
+    expect(taskInputSchema.safeParse({ title: 'Synthetic', description: null, priority: 'Normal', category: 'Work', dueDate: null, remindAtUtc: '2026-11-01T12:00:00' }).success).toBe(false);
+  });
+  it('does not expose delivery receipts to JavaScript', () => {
+    expect(requestSchema.safeParse({ protocolVersion: 1, requestId: task.id, operation: 'planner.reminder', payload: { id: task.id, expectedRevision: 1, action: 'deliver' } }).success).toBe(false);
+  });
+});

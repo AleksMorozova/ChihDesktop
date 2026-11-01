@@ -27,14 +27,18 @@ public sealed class CatWindow : Window
     private readonly UserSettingsWindowManager userWindows;
     private readonly UserSettingsService userSettings;
     private readonly IReminderCommands reminderCommands;
+    private readonly AdminDiagnostics diagnostics;
+    private readonly TaskListWindowManager taskList;
 
     public CatWindow(PetConfiguration config, ReminderControllerFactory reminderFactory, AdminWindowManager adminWindows,
-        UserSettingsWindowManager userWindows, UserSettingsService userSettings, IReminderCommands reminderCommands)
+        UserSettingsWindowManager userWindows, UserSettingsService userSettings, IReminderCommands reminderCommands, AdminDiagnostics diagnostics, TaskListWindowManager taskList)
     {
-        admin = adminWindows;
+        admin = adminWindows; this.taskList = taskList;
+        this.diagnostics = diagnostics;
         this.userWindows = userWindows; this.userSettings = userSettings; this.reminderCommands = reminderCommands;
         userSettings.Changed += ApplyUserSettings;
         configuration = config;
+        AppBranding.Apply(this);
         Title = "ChihDesktop";
         Width = config.CatSize; Height = config.CatSize * 130 / 160;
         WindowStyle = WindowStyle.None;
@@ -72,7 +76,7 @@ public sealed class CatWindow : Window
         applicationServicesStopped = true;
         timer?.Stop(); // Also safe if startup failed before the constructor completed.
         reminders?.Dispose();
-        admin.Dispose();
+        taskList.Dispose(); admin.Dispose();
         userWindows.Dispose(); userSettings.Changed -= ApplyUserSettings;
         CompositionTarget.Rendering -= OnWalkingRender;
         SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
@@ -168,62 +172,82 @@ public sealed class CatWindow : Window
     {
         var menu = new ContextMenu();
         var pause = new MenuItem { Header = "Pause" };
-        pause.Click += (_, _) => { behavior.IsPaused = !behavior.IsPaused; pause.Header = behavior.IsPaused ? "Resume" : "Pause"; };
+        pause.Tag = "pause";
+        pause.Click += (_, _) => Run("pause", () => { behavior.IsPaused = !behavior.IsPaused; pause.Header = behavior.IsPaused ? "Resume" : "Pause"; });
         menu.Items.Add(pause);
         Add("Sleep", () => { behavior.Sleep(); animation.Update(behavior.State, behavior.Direction, 0); });
         Add("Wake Up", () => { behavior.WakeUp(); animation.Update(behavior.State, behavior.Direction, 0); });
         Add("Reset Position", positioning.Reset);
         menu.Items.Add(new Separator());
-        Add("Планировщик Чиха…", () => AfterMenu(admin.Show));
-        Add("Настройки Чиха…", () => AfterMenu(() => userWindows.Show()));
+        Add("Open Admin / Планировщик Чиха…", admin.Show);
+        Add("Мои задачи…", taskList.Show);
+        Add("Настройки Чиха…", () => userWindows.Show());
         Add("Напоминания — сегодня", () => reminders?.ShowCenter(false));
         Add("Настроить напоминания…", () => reminders?.ShowCenter(true));
         var reminderTests = new MenuItem { Header = "Test Reminder Now · Проверить напоминание" };
         menu.Items.Add(reminderTests);
         menu.Items.Add(new Separator());
-        Add("Погладить Чиха", () => AfterMenu(PetChih));
-        Add("Чего ты хочешь?", () => AfterMenu(() => reminders?.RequestPhrase(false)));
+        Add("Погладить Чиха", () => PetChih(true));
+        Add("Чего ты хочешь?", () => reminders?.RequestPhrase(false));
         var personalityToggle = new MenuItem { Header = "Характер Чиха", IsCheckable = true };
-        personalityToggle.Click += (_, _) => reminders?.TogglePersonality();
+        personalityToggle.Tag = "personality";
+        personalityToggle.Click += (_, _) => Run("personality", () => reminders?.TogglePersonality());
         menu.Items.Add(personalityToggle);
-        Add("Тест случайной фразы", () => AfterMenu(() => reminders?.RequestPhrase(true)));
+        Add("Тест случайной фразы", () => reminders?.RequestPhrase(true));
         menu.Items.Add(new Separator());
         Add("Exit", Close);
         menu.Opened += (_, _) =>
         {
+            if (IsMouseCaptured) ReleaseMouseCapture();
+            pressed = dragging = false;
             menuOpen = true;
             reminderTests.Items.Clear();
             foreach (var definition in reminderCommands.GetSnapshot().Reminders)
             {
                 var test = new MenuItem { Header = definition.Title };
                 string id = definition.Id;
-                test.Click += (_, _) => AfterMenu(() => reminders?.ShowTest(id));
+                test.Tag = "test-reminder";
+                test.Click += (_, _) => Run("test-reminder", () => reminders?.ShowTest(id));
                 reminderTests.Items.Add(test);
             }
             reminderTests.IsEnabled = reminderTests.Items.Count > 0;
+            reminderTests.ToolTip = reminderTests.IsEnabled ? "Тестовые отметки не меняют реальное расписание." : "Сначала создай напоминание в настройках — тестировать можно и выключенное.";
+            ToolTipService.SetShowOnDisabled(reminderTests, true);
             reminders?.SuspendPersonality();
             personalityToggle.IsChecked = reminders?.PersonalityEnabled == true;
         };
-        menu.Closed += (_, _) => menuOpen = false;
+        menu.Closed += (_, _) => { menuOpen = false; diagnostics.Write("pet.menu.closed"); };
         return menu;
         void Add(string title, Action action)
         {
             var item = new MenuItem { Header = title };
-            item.Click += (_, _) => action();
+            item.Tag = title;
+            item.Click += (_, _) => Run(title, action);
             menu.Items.Add(item);
+        }
+        void Run(string command, Action action)
+        {
+            diagnostics.Write("pet.command.request", new { command, menuOpen, pressed, dragging });
+            AdminWindowManager.AfterMenuClosed(menu, menuOpen, () =>
+            {
+            if (applicationServicesStopped) return;
+            diagnostics.Write("pet.command.start", new { command });
+            try { action(); diagnostics.Write("pet.command.complete", new { command }); }
+            catch (Exception ex)
+            {
+                diagnostics.Write("pet.command.failed", new { command }, ex);
+                MessageBox.Show("Не удалось выполнить команду Чиха. Проверь журнал диагностики.", "ChihDesktop", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            });
         }
     }
 
-    private void AfterMenu(Action action) => Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
-    {
-        // Wait for the menu to release its capture before attempting any dialogue.
-        if (!menuOpen && !pressed && !dragging) action();
-    });
-
-    private void PetChih()
+    private void PetChih(bool requested = false)
     {
         behavior.React();
         animation.Update(behavior.State, behavior.Direction, 0);
-        reminders?.Pet();
+        reminders?.Pet(requested);
     }
+
+    internal (CatState State, bool Paused) MenuState => (behavior.State, behavior.IsPaused);
 }

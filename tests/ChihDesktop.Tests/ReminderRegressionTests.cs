@@ -153,7 +153,11 @@ public sealed class ReminderRegressionTests
 
         var weekly = Create("weekly");
         weekly.Data.Reminders = weekly.Data.Reminders.Where(r => r.Id == "sample-weekly").ToList();
-        for (int day = 26; day <= 31; day++) weekly.Tick(Utc($"2026-10-{day:00}T16:00:00Z"), TimeSpan.FromDays(1));
+        for (int day = 26; day <= 31; day++)
+        {
+            weekly.Tick(Utc($"2026-10-{day:00}T16:00:00Z"), TimeSpan.FromDays(1));
+            Assert.True(weekly.PersistenceError is null, weekly.PersistenceError);
+        }
         weekly.Tick(Utc("2026-11-01T16:00:00Z"), zero);
         Check(weekly.Data.Occurrences.Count == 1 && weekly.Data.Occurrences[0].LocalDate.DayOfWeek == DayOfWeek.Wednesday,
             "weekly creates only Wednesday occurrence across all seven weekdays");

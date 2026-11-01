@@ -1,5 +1,8 @@
 # v0.3.0 local release-readiness review
 
+This is the earlier source-baseline checkpoint. For subsequent installer work
+and actual package verification/blockers, see [R2.1-REVIEW.md](R2.1-REVIEW.md).
+
 ## Decision
 
 **Cleared for the initial local source baseline commit.** Reviewed code,

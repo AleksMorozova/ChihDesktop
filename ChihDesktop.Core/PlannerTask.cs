@@ -1,5 +1,6 @@
 namespace ChihDesktop;
 
+public enum TaskReminderStatus { Disabled, Pending, Delivered, Dismissed }
 public enum PlannerTaskStatus { Active, Completed }
 public enum PlannerPriority { Low, Normal, High }
 public enum PlannerCategory { Personal, Study, Work }
@@ -8,7 +9,7 @@ public enum PlannerSort { DueDate, Priority, CreatedAt }
 public enum PlannerSortDirection { Ascending, Descending }
 
 public sealed record PlannerTaskInput(string Title, string? Description = null,
-    PlannerPriority Priority = PlannerPriority.Normal, PlannerCategory Category = PlannerCategory.Personal, DateOnly? DueDate = null)
+    PlannerPriority Priority = PlannerPriority.Normal, PlannerCategory Category = PlannerCategory.Personal, DateOnly? DueDate = null, DateTimeOffset? RemindAtUtc = null)
 {
     public PlannerTaskInput Validate()
     {
@@ -26,7 +27,7 @@ public sealed record PlannerQuery(PlannerView View = PlannerView.AllActive, Plan
 // Read-only application contract; neither this DTO nor the domain entity is an EF-tracked object.
 public sealed record PlannerTaskDto(Guid Id, string Title, string? Description, PlannerTaskStatus Status,
     PlannerPriority Priority, PlannerCategory Category, DateOnly? DueDate, DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc, DateTimeOffset? CompletedAtUtc, long Revision);
+    DateTimeOffset UpdatedAtUtc, DateTimeOffset? CompletedAtUtc, long Revision, DateTimeOffset? RemindAtUtc = null, DateTimeOffset? SnoozedUntilUtc = null, TaskReminderStatus ReminderStatus = TaskReminderStatus.Disabled, DateTimeOffset? DeliveredAtUtc = null);
 
 public sealed class PlannerTask
 {
@@ -41,6 +42,10 @@ public sealed class PlannerTask
     public DateTimeOffset UpdatedAtUtc { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
     public long Revision { get; private set; }
+    public DateTimeOffset? RemindAtUtc { get; private set; }
+    public DateTimeOffset? SnoozedUntilUtc { get; private set; }
+    public TaskReminderStatus ReminderStatus { get; private set; }
+    public DateTimeOffset? DeliveredAtUtc { get; private set; }
     private PlannerTask() { }
 
     public static PlannerTask Create(PlannerTaskInput input, DateTimeOffset now)
@@ -48,16 +53,21 @@ public sealed class PlannerTask
         input = input.Validate();
         return new() { Id = Guid.NewGuid(), Title = input.Title, Description = input.Description,
             Priority = input.Priority, Category = input.Category, DueDate = input.DueDate,
-            CreatedAtUtc = now.ToUniversalTime(), UpdatedAtUtc = now.ToUniversalTime(), Revision = 1 };
+            RemindAtUtc = input.RemindAtUtc?.ToUniversalTime(), ReminderStatus = input.RemindAtUtc.HasValue ? TaskReminderStatus.Pending : TaskReminderStatus.Disabled, CreatedAtUtc = now.ToUniversalTime(), UpdatedAtUtc = now.ToUniversalTime(), Revision = 1 };
     }
 
     public bool Update(PlannerTaskInput input, DateTimeOffset now)
     {
         input = input.Validate();
         if (Title == input.Title && Description == input.Description && Priority == input.Priority &&
-            Category == input.Category && DueDate == input.DueDate) return false;
+            Category == input.Category && DueDate == input.DueDate && RemindAtUtc == input.RemindAtUtc) return false;
         Title = input.Title; Description = input.Description; Priority = input.Priority;
         Category = input.Category; DueDate = input.DueDate;
+        if (RemindAtUtc != input.RemindAtUtc)
+        {
+            RemindAtUtc = input.RemindAtUtc?.ToUniversalTime(); SnoozedUntilUtc = null; DeliveredAtUtc = null;
+            ReminderStatus = RemindAtUtc.HasValue ? TaskReminderStatus.Pending : TaskReminderStatus.Disabled;
+        }
         Touch(now);
         return true;
     }
@@ -65,6 +75,7 @@ public sealed class PlannerTask
     public bool Complete(DateTimeOffset now)
     {
         if (Status == PlannerTaskStatus.Completed) return false;
+        if (RemindAtUtc.HasValue) ReminderStatus = TaskReminderStatus.Dismissed;
         Status = PlannerTaskStatus.Completed; CompletedAtUtc = now.ToUniversalTime(); Touch(now);
         return true;
     }
@@ -76,20 +87,42 @@ public sealed class PlannerTask
         return true;
     }
 
+    public bool ReminderDue(DateTimeOffset now) => Status == PlannerTaskStatus.Active &&
+        ReminderStatus == TaskReminderStatus.Pending && (SnoozedUntilUtc ?? RemindAtUtc) is { } due && due <= now;
+
+    public bool ChangeReminder(string action, DateTimeOffset now)
+    {
+        if (Status != PlannerTaskStatus.Active || RemindAtUtc is null) return false;
+        switch (action)
+        {
+            case "deliver":
+                if (!ReminderDue(now)) return false;
+                ReminderStatus = TaskReminderStatus.Delivered; DeliveredAtUtc = now.ToUniversalTime(); break;
+            case "snooze":
+                SnoozedUntilUtc = now.ToUniversalTime().AddMinutes(10); ReminderStatus = TaskReminderStatus.Pending; break;
+            case "dismiss":
+                if (ReminderStatus == TaskReminderStatus.Dismissed) return false;
+                ReminderStatus = TaskReminderStatus.Dismissed; break;
+            default: throw new ArgumentException("Неизвестное действие напоминания.");
+        }
+        Touch(now); return true;
+    }
+
     private void Touch(DateTimeOffset now) { UpdatedAtUtc = now.ToUniversalTime(); Revision = checked(Revision + 1); }
 
     public PlannerTaskDto ToDto() => new(Id, Title, Description, Status, Priority, Category, DueDate,
-        CreatedAtUtc, UpdatedAtUtc, CompletedAtUtc, Revision);
+        CreatedAtUtc, UpdatedAtUtc, CompletedAtUtc, Revision, RemindAtUtc, SnoozedUntilUtc, ReminderStatus, DeliveredAtUtc);
 
     public static PlannerTask Restore(PlannerTaskDto value)
     {
         _ = new PlannerTaskInput(value.Title, value.Description, value.Priority, value.Category, value.DueDate).Validate();
-        if (value.Id == Guid.Empty || value.Revision < 1 || !Enum.IsDefined(value.Status) ||
+        if (value.Id == Guid.Empty || value.Revision < 1 || !Enum.IsDefined(value.Status) || !Enum.IsDefined(value.ReminderStatus) ||
+            value.RemindAtUtc is null && (value.ReminderStatus != TaskReminderStatus.Disabled || value.SnoozedUntilUtc is not null || value.DeliveredAtUtc is not null) ||
             (value.Status == PlannerTaskStatus.Completed) != value.CompletedAtUtc.HasValue)
             throw new ArgumentException("Некорректная сохранённая задача.");
         return new() { Id = value.Id, Title = value.Title, Description = value.Description, Status = value.Status,
             Priority = value.Priority, Category = value.Category, DueDate = value.DueDate,
             CreatedAtUtc = value.CreatedAtUtc.ToUniversalTime(), UpdatedAtUtc = value.UpdatedAtUtc.ToUniversalTime(),
-            CompletedAtUtc = value.CompletedAtUtc?.ToUniversalTime(), Revision = value.Revision };
+            CompletedAtUtc = value.CompletedAtUtc?.ToUniversalTime(), Revision = value.Revision, RemindAtUtc = value.RemindAtUtc, SnoozedUntilUtc = value.SnoozedUntilUtc, ReminderStatus = value.ReminderStatus, DeliveredAtUtc = value.DeliveredAtUtc };
     }
 }

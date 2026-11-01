@@ -24,6 +24,10 @@ public sealed class UserSettingsWindow : Window
     private readonly CheckBox personality = new() { Content = "Включить характер Чиха" };
     private readonly CheckBox spontaneous = new() { Content = "Редкие самостоятельные комментарии" };
     private readonly CheckBox notifications = new() { Content = "Показывать уведомления напоминаний" };
+    private readonly CheckBox taskNotifications = new() { Content = "Уведомления задач (только настроенные вручную)" };
+    private readonly CheckBox taskSummary = new() { Content = "Редкие сводки задач" };
+    private readonly CheckBox taskTitles = new() { Content = "Показывать названия задач в пузырях" };
+    private readonly CheckBox taskReactions = new() { Content = "Реакции Чиха на выполнение задач" };
     private readonly TextBox interval = new();
     private readonly CheckBox firstEnabled = new() { Content = "Создать и включить моё первое напоминание" };
     private readonly TextBox firstTitle = new() { MaxLength = 200 };
@@ -36,6 +40,7 @@ public sealed class UserSettingsWindow : Window
     {
         this.service = service; this.reminders = reminders; this.onboarding = onboarding;
         var current = service.GetSnapshot();
+        AppBranding.Apply(this);
         Title = "ChihDesktop — настройки"; Width = 650; Height = 740; MinWidth = 530; MinHeight = 480;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = new SolidColorBrush(Color.FromRgb(247, 248, 245));
@@ -55,6 +60,7 @@ public sealed class UserSettingsWindow : Window
         personality.IsChecked = current.Personality.PersonalityEnabled; spontaneous.IsChecked = current.Personality.SpontaneousCommentsEnabled;
         interval.Text = current.Personality.MinimumCommentIntervalMinutes.ToString(CultureInfo.InvariantCulture);
         notifications.IsChecked = current.ReminderNotificationsEnabled;
+        taskNotifications.IsChecked = current.TaskReminderNotificationsEnabled; taskSummary.IsChecked = current.TaskSummarySpeechEnabled; taskTitles.IsChecked = current.ShowTaskTitlesInBubbles; taskReactions.IsChecked = current.TaskCompletionReactionsEnabled;
         step = onboarding ? 0 : 1;
         Render();
         status.Text = service.Error ?? reminders.PersistenceError ?? "";
@@ -89,7 +95,7 @@ public sealed class UserSettingsWindow : Window
         }
         if (!onboarding || step == 2)
         {
-            foreach (var box in new[] { petOnly, topmost, personality, spontaneous, notifications, login })
+            foreach (var box in new[] { petOnly, topmost, personality, spontaneous, notifications, login, taskNotifications, taskSummary, taskTitles, taskReactions })
             { box.Margin = new(0, 9, 0, 9); body.Children.Add(box); }
             Field("Минимум минут между комментариями (1–1440)", interval);
             body.Children.Add(Text("Отключение уведомлений сохраняет ожидающие записи. Тихие часы настраиваются в окне напоминаний. Автозапуск по умолчанию выключен и не требует прав администратора."));
@@ -123,7 +129,7 @@ public sealed class UserSettingsWindow : Window
         options.PersonalityEnabled = personality.IsChecked == true; options.SpontaneousCommentsEnabled = spontaneous.IsChecked == true; options.MinimumCommentIntervalMinutes = minutes;
         var result = service.Save(previous with { OwnerDisplayName = name.Text, TimeZoneId = zone.SelectedValue as string ?? previous.TimeZoneId,
             LaunchAtSignIn = login.IsChecked == true, StartPetOnly = petOnly.IsChecked == true, PetTopmost = topmost.IsChecked == true,
-            ReminderNotificationsEnabled = notifications.IsChecked == true, Personality = options });
+            ReminderNotificationsEnabled = notifications.IsChecked == true, TaskReminderNotificationsEnabled = taskNotifications.IsChecked == true, TaskSummarySpeechEnabled = taskSummary.IsChecked == true, ShowTaskTitlesInBubbles = taskTitles.IsChecked == true, TaskCompletionReactionsEnabled = taskReactions.IsChecked == true, Personality = options });
         if (!result.Success) { status.Text = result.Error; return; }
         if (create)
         {
@@ -146,8 +152,10 @@ public sealed class UserSettingsWindowManager(UserSettingsService service, IRemi
     private UserSettingsWindow? window;
     public void Show(bool onboarding = false)
     {
-        if (window is null) { window = new(service, reminders, onboarding); window.Closed += (_, _) => window = null; window.Show(); }
-        else { if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal; window.Activate(); }
+        if (window is null) { window = new(service, reminders, onboarding); window.Closed += (_, _) => window = null; }
+        if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
+        if (!window.IsVisible) window.Show();
+        new WindowPositionService(window).FitToWorkArea(); window.Activate();
     }
     public void Dispose() { window?.Close(); window = null; }
 }

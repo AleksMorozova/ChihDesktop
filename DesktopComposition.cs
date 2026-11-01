@@ -13,7 +13,7 @@ public static class DesktopComposition
     // touch user configuration, or register any hosted workers.
     public static IHost CreateHost(IReminderPersistence? persistence = null, TimeProvider? clock = null,
         PlannerDatabaseOptions? plannerDatabase = null, UserSettingsService? userSettings = null,
-        string? userDataDirectory = null, IAutostartRegistration? autostart = null)
+        string? userDataDirectory = null, IAutostartRegistration? autostart = null, AdminDiagnostics? adminDiagnostics = null)
     {
         if (userDataDirectory is not null && autostart is null)
             throw new ArgumentException("Isolated profiles must supply an autostart adapter.", nameof(autostart));
@@ -24,6 +24,7 @@ public static class DesktopComposition
         .ConfigureLogging(logging => logging.ClearProviders().AddDebug().SetMinimumLevel(LogLevel.Information))
         .ConfigureServices(services =>
         {
+            services.AddSingleton(adminDiagnostics ?? new AdminDiagnostics(System.IO.Path.Combine(folder, "logs")));
             services.AddSingleton<IHostLifetime, DesktopHostLifetime>();
             services.AddSingleton<TimeProvider>(clock ?? TimeProvider.System);
             services.AddSingleton(_ => userSettings ?? new UserSettingsService(new UserSettingsStore(System.IO.Path.Combine(folder, "user-settings.json"), defaults: () =>
@@ -45,6 +46,8 @@ public static class DesktopComposition
             services.AddSingleton<Func<Window, IReminderPresenter>>(_ => owner => new ReminderBubble(owner));
             services.AddSingleton<ReminderControllerFactory>();
             services.AddSingleton<AdminWindowManager>();
+            services.AddSingleton<TaskListWindowManager>();
+            services.AddSingleton<AdminApplicationApi>();
             services.AddSingleton<UserSettingsWindowManager>();
             services.AddSingleton<CatWindow>();
         }).Build();
@@ -58,8 +61,8 @@ internal sealed class DesktopHostLifetime : IHostLifetime
 }
 
 public sealed class ReminderControllerFactory(IReminderCommands commands, PersonalityService personality,
-    TimeProvider clock, Func<Window, IReminderPresenter> presenter, ILogger<ReminderController> logger)
+    TimeProvider clock, Func<Window, IReminderPresenter> presenter, ILogger<ReminderController> logger, IPlannerService planner, UserSettingsService settings, TaskListWindowManager tasks, AdminDiagnostics diagnostics)
 {
     public ReminderController Create(Window owner, Func<bool> interactionBlocked, Func<CatState> state) =>
-        new(owner, interactionBlocked, state, commands, presenter(owner), personality, clock, logger);
+        new(owner, interactionBlocked, state, commands, presenter(owner), personality, clock, logger, planner, settings, tasks, diagnostics);
 }

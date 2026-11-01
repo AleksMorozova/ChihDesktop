@@ -34,6 +34,8 @@ public interface IReminderCommands
     ReminderCommandResult Snooze(string id, DateTimeOffset now);
     ReminderCommandResult Snooze(string id);
     ReminderCommandResult UpdateSettings(IReadOnlyList<ReminderDefinition> edits, bool quietEnabled, TimeOnly start, TimeOnly end);
+    ReminderCommandResult UpdateReminder(ReminderDefinition edit);
+    ReminderCommandResult SetReminderEnabled(string id, bool enabled);
     ReminderCommandResult UpdatePersonality(PersonalityOptions options);
     ReminderCommandResult CreateReminder(ReminderDefinition definition);
     ReminderCommandResult DeleteReminder(string id);

@@ -11,10 +11,13 @@ function fixture(rows: PlannerTask[] = [initial]) {
   let tasks = rows.map(task => ({ ...task }));
   // Test-only service stand-in. The production frontend never filters or stores task data.
   const request = vi.fn(async (operation: Operation, payload: any) => {
+    if (operation === 'settings.get') return { settings: { timeZoneId: 'Europe/Kyiv' }, timeZones: [{ id: 'Europe/Kyiv', label: 'Kyiv' }] };
+    if (operation === 'planner.resolveTime') return '2026-12-01T10:00:00Z';
     if (operation === 'planner.list') return tasks;
     if (operation === 'planner.create') { const added = { ...initial, ...payload.task, id: crypto.randomUUID() }; tasks = [...tasks, added]; return added; }
     const found = tasks.find(task => task.id === payload.id)!;
     if (operation === 'planner.update') Object.assign(found, payload.task, { revision: found.revision + 1 });
+    if (operation === 'planner.reminder') Object.assign(found, { reminderStatus: 'Pending', snoozedUntilUtc: '2026-12-01T10:10:00Z', revision: found.revision + 1 });
     if (operation === 'planner.complete') Object.assign(found, { status: 'Completed', completedAtUtc: initial.createdAtUtc });
     if (operation === 'planner.reopen') Object.assign(found, { status: 'Active', completedAtUtc: null });
     if (operation === 'planner.delete') { tasks = tasks.filter(task => task.id !== payload.id); return true; }
@@ -68,7 +71,7 @@ describe('planner interface', () => {
     await user.selectOptions(within(dialog).getByLabelText('Категория'), 'Study');
     await user.click(within(dialog).getByRole('button', { name: 'Сохранить задачу' }));
     await screen.findByRole('button', { name: 'New synthetic task' });
-    expect(request).toHaveBeenCalledWith('planner.create', { task: { title: 'New synthetic task', description: 'Synthetic description', dueDate: '2026-12-01', priority: 'High', category: 'Study' } });
+    expect(request).toHaveBeenCalledWith('planner.create', { task: { title: 'New synthetic task', description: 'Synthetic description', dueDate: '2026-12-01', remindAtUtc: null, priority: 'High', category: 'Study' } });
     await user.click(screen.getByRole('button', { name: 'Редактировать: New synthetic task' }));
     const title = within(screen.getByRole('dialog')).getByLabelText(/Название/);
     await user.clear(title); await user.type(title, 'Edited synthetic task');
@@ -119,7 +122,7 @@ describe('planner interface', () => {
     expect(screen.getByRole('button', { name: 'Закрыть' })).toBeDisabled();
     resolve(initial); await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
-  it('uses keyboard dismissal and marks integrations as pending', async () => {
+  it('uses keyboard dismissal, keeps GitHub pending and opens the real reminder page', async () => {
     const { api } = fixture(); const user = userEvent.setup(); render(<App api={api} />);
     await screen.findByRole('button', { name: 'Synthetic task' });
     await user.click(screen.getByRole('button', { name: 'Новая задача' }));
@@ -127,6 +130,56 @@ describe('planner interface', () => {
     await user.click(screen.getByRole('button', { name: /GitHub/ }));
     expect(screen.getByText('НЕ ПОДКЛЮЧЕНО')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Напоминания/ }));
-    expect(screen.getByText('ИНТЕГРАЦИЯ ОЖИДАЕТСЯ')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Управление напоминаниями' })).toBeInTheDocument();
   });
+});
+
+describe('Task Companion editor', () => {
+  it('creates a reminder without a due date through explicit native timezone resolution', async () => {
+    const { api, request } = fixture([]); const user = userEvent.setup(); render(<App api={api} />);
+    await screen.findByText('Свободное место для хороших планов');
+    await user.click(screen.getByRole('button', { name: 'Новая задача' }));
+    const dialog = screen.getByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/Название/), 'Synthetic reminder');
+    await user.click(within(dialog).getByLabelText('Напомнить об этой задаче'));
+    await user.type(within(dialog).getByLabelText(/^Напоминание — дата и время/), '2026-12-01T12:00');
+    await waitFor(() => expect(within(dialog).getByLabelText('Часовой пояс напоминания')).toHaveValue('Europe/Kyiv'));
+    await user.click(within(dialog).getByRole('button', { name: 'Сохранить задачу' }));
+    await screen.findByRole('button', { name: 'Synthetic reminder' });
+    expect(request).toHaveBeenCalledWith('planner.resolveTime', { local: '2026-12-01T12:00', timeZoneId: 'Europe/Kyiv' });
+    expect(request).toHaveBeenCalledWith('planner.create', { task: expect.objectContaining({ dueDate: null, remindAtUtc: '2026-12-01T10:00:00Z' }) });
+  });
+  it('requires a reminder time when enabling and does not save an invented instant', async () => {
+    const { api, request } = fixture([]); const user = userEvent.setup(); render(<App api={api} />);
+    await screen.findByText('Свободное место для хороших планов');
+    await user.click(screen.getByRole('button', { name: 'Новая задача' }));
+    const dialog = screen.getByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/Название/), 'Synthetic');
+    await user.click(within(dialog).getByLabelText('Напомнить об этой задаче'));
+    await user.click(within(dialog).getByRole('button', { name: 'Сохранить задачу' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Выберите дату');
+    expect(request).not.toHaveBeenCalledWith('planner.create', expect.anything());
+  });
+  it('preserves an existing UTC instant on title-only editing and supports snooze', async () => {
+    const { api, request } = fixture([{ ...initial, remindAtUtc: '2026-12-01T10:00:00Z', reminderStatus: 'Delivered' }]);
+    const user = userEvent.setup(); render(<App api={api} />);
+    await screen.findByRole('button', { name: 'Synthetic task' });
+    await user.click(screen.getByRole('button', { name: 'Редактировать: Synthetic task' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Сохранить задачу' }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('planner.update', expect.objectContaining({ task: expect.objectContaining({ remindAtUtc: '2026-12-01T10:00:00Z' }) })));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Отложить: Synthetic task' }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('planner.reminder', { id: initial.id, expectedRevision: 2, action: 'snooze' }));
+    expect(request).not.toHaveBeenCalledWith('planner.resolveTime', expect.anything());
+  });
+});
+
+it('opens the Calendar placeholder from navigation while keeping GitHub available', async () => {
+  const { api } = fixture([]); const user = userEvent.setup(); render(<App api={api} />);
+  await user.click(screen.getByRole('button', { name: /Google Calendar/ }));
+  const integrations = screen.getByRole('region', { name: 'Интеграции' });
+  expect(within(integrations).getByRole('heading', { name: 'Google Calendar' })).toBeVisible();
+  expect(within(integrations).getByRole('button', { name: 'Google Calendar — скоро' })).toBeDisabled();
+  await user.click(within(screen.getByRole('navigation')).getByRole('button', { name: /GitHub/ }));
+  expect(screen.getByRole('region', { name: 'Интеграции' })).toBeVisible();
 });

@@ -8,6 +8,7 @@ public sealed class ReminderDefinitionWindow : Window
 {
     public ReminderDefinitionWindow(IReminderCommands commands, Action saved)
     {
+        AppBranding.Apply(this);
         Title = "Новое напоминание"; Width = 460; Height = 510; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var panel = new StackPanel { Margin = new(25) }; Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         var title = new TextBox { MaxLength = 200 }; var time = new TextBox { Text = "09:00" };

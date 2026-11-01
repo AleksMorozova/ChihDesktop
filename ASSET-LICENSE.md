@@ -2,7 +2,7 @@
 
 ## Scope and provenance
 
-This notice covers exactly the 15 production illustrated PNGs in
+The sprite portion of this notice covers exactly the 15 production illustrated PNGs in
 `Assets/Sprites`: Idle-00..01, WalkRight-00..03, Sit-00..01, Sleep-00..01,
 Stretch-00..02 and React-00..01. Their SHA-256 values are recorded in
 `tools/PersistenceChecks/sprite-baseline.json`.
@@ -15,6 +15,15 @@ This records the owner's confirmation, not independent verification of every
 creation step or a claim that AI-generated material necessarily has exclusive
 copyright protection. No artwork was regenerated or modified in this review.
 
+The owner also supplied and explicitly approved `Assets/Branding/chih-icon.png`
+and `Assets/Branding/chih-icon.ico` for ChihDesktop application and installer
+branding. These two files are covered by the same separate artwork terms below.
+Their creation tooling is not independently established here; the ChatGPT
+provenance statement above applies specifically to the 15 production sprites.
+The approved PNG and all seven ICO sizes are used unchanged. This permission
+covers use within the official source repository and application releases,
+not standalone icon packs or unrelated products.
+
 Original photographs, private reference atlases and backups remain private;
 they are neither licensed by this notice nor included in public source or
 application releases. The unused historical `Assets/chih-preview.png` has
@@ -23,7 +32,7 @@ unverified provenance and remains excluded. This permission does not cover it.
 ## Permitted use within ChihDesktop
 
 To the extent the owner can grant the relevant rights, permission is granted to
-include the exact production sprites in the official public ChihDesktop source
+include the exact production sprites and approved branding in the official public ChihDesktop source
 repository and official application releases. Users may download that source,
 build it and use the bundled artwork as part of ChihDesktop. Official releases
 may be redistributed intact and without charge with this notice retained.

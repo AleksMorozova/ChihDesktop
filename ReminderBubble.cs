@@ -25,6 +25,7 @@ public sealed class ReminderBubble : Window, IReminderPresenter
 
     public ReminderBubble(Window pet)
     {
+        AppBranding.Apply(this);
         this.pet = pet;
         Owner = pet;
         Width = 370;
@@ -82,6 +83,7 @@ public sealed class ReminderBubble : Window, IReminderPresenter
 
     public void Present(IReadOnlyList<ReminderOccurrence> occurrences, string displayMessage)
     {
+        reminderItems.IsEnabled = true;
         IsStoreNotice = false;
         persistenceError.Visibility = Visibility.Collapsed;
         Occurrences = occurrences;
@@ -97,6 +99,14 @@ public sealed class ReminderBubble : Window, IReminderPresenter
         UpdateLayout();
         FollowPet();
     }
+
+    public void AddTaskOpenAction(Action open)
+    {
+        var button = new Button { Content = "Открыть задачу / список", Focusable = false, Padding = new(7, 5, 7, 5) };
+        button.Click += (_, _) => open(); reminderItems.Children.Add(button);
+    }
+
+    internal void SetTaskActionsEnabled(bool enabled) => reminderItems.IsEnabled = enabled;
 
     public void PresentDialogue(string mood, string text)
     {

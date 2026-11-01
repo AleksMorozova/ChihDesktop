@@ -73,10 +73,10 @@ public sealed class PersonalityService
         energy = Math.Min(1, energy + .08);
     }
 
-    public string? PetReply(DateTimeOffset now, bool allowed)
+    public string? PetReply(DateTimeOffset now, bool allowed, bool requested = false)
     {
-        if (!Enabled || !allowed || now - lastPetReply < TimeSpan.FromSeconds(45) ||
-            now - lastSpeech < TimeSpan.FromSeconds(30) || random.NextDouble() >= .45) return null;
+        if (!Enabled || !allowed || now - lastPetReply < TimeSpan.FromSeconds(requested ? 3 : 45) ||
+            now - lastSpeech < TimeSpan.FromSeconds(requested ? 3 : 30) || !requested && random.NextDouble() >= .45) return null;
         lastPetReply = now;
         RecordSpeech(now);
         return NextPhrase(DialogueCategory.Petting);
@@ -112,6 +112,12 @@ public sealed class PersonalityService
     {
         lastSpeech = now;
         DeferSpontaneous(now);
+    }
+
+    public string? TaskComment(DateTimeOffset now, DialogueCategory category)
+    {
+        if (!Enabled || now - lastSpeech < TimeSpan.FromMinutes(Math.Max(1, options().MinimumCommentIntervalMinutes))) return null;
+        var phrase = NextPhrase(category); RecordSpeech(now); return phrase;
     }
 
     public void DeferSpontaneous(DateTimeOffset now) => nextSpontaneous = now.AddMinutes(

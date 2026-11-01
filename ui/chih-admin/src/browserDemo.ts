@@ -50,6 +50,7 @@ export class BrowserDemoAdapter implements PlannerApi {
         const data = payloadSchemas['planner.delete'].parse(payload);
         this.checkRevision(this.find(data.id), data.expectedRevision); this.tasks.delete(data.id); result = true; break;
       }
+      default: throw new Error('Напоминания и настройки доступны только в приложении Чиха. Демо не читает ваш профиль.');
     }
     return structuredClone(responseSchemas[operation].parse(result)) as Result<O>;
   }

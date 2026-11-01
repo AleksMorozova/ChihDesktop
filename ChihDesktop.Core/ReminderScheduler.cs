@@ -202,10 +202,13 @@ internal sealed class ReminderScheduler
         return Save();
     }
 
-    public bool SettingsChanged()
+    public bool SettingsChanged() => SettingsChanged(null);
+
+    public bool SettingsChanged(string? reminderId)
     {
         if (!Save()) return false;
-        activeIntervals.Clear();
+        if (reminderId is null) activeIntervals.Clear();
+        else activeIntervals.Remove(reminderId);
         return true;
     }
 

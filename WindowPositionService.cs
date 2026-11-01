@@ -34,6 +34,20 @@ public sealed class WindowPositionService(Window window)
         return boundary;
     }
 
+    public void FitToWorkArea()
+    {
+        var area = WorkArea(MonitorFromWindow(Handle, 2));
+        var dpi = VisualTreeHelper.GetDpi(window);
+        double width = (area.Right - area.Left) / dpi.DpiScaleX;
+        double height = (area.Bottom - area.Top) / dpi.DpiScaleY;
+        window.MinWidth = Math.Min(window.MinWidth, width);
+        window.MinHeight = Math.Min(window.MinHeight, height);
+        window.Width = Math.Min(window.ActualWidth, width);
+        window.Height = Math.Min(window.ActualHeight, height);
+        window.UpdateLayout();
+        Clamp();
+    }
+
     public void Clamp()
     {
         GetWindowRect(Handle, out var rect);

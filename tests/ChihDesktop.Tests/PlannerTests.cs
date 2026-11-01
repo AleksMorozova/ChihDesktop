@@ -85,7 +85,8 @@ public sealed class PlannerTests
         Assert.Equal(PlannerDatabaseState.Ready, db.Executor.State);
         using (var context = db.Factory.CreateDbContext())
         {
-            Assert.Single(context.Database.GetAppliedMigrations());
+            Assert.Equal(2, context.Database.GetAppliedMigrations().Count());
+            Assert.Contains("20261031154318_InitialPlanner", context.Database.GetAppliedMigrations());
             Assert.Empty(context.Database.GetPendingMigrations());
             Assert.False(context.Database.HasPendingModelChanges());
             Assert.Equal(2, context.Model.FindEntityType(typeof(PlannerTaskRow))!.GetIndexes().Count());

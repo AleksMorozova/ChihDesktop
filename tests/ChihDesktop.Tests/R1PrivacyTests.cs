@@ -24,8 +24,9 @@ public sealed class R1PrivacyTests
     public void Project_embeds_only_production_frames_and_excludes_private_source_roots()
     {
         var project = XDocument.Load(Path.Combine(Workspace, "ChihDesktop.csproj"));
-        Assert.Equal("0.3.0", project.Descendants("Version").Single().Value);
-        Assert.Equal("Assets/Sprites/*.png", project.Descendants("Resource").Single().Attribute("Include")!.Value);
+        Assert.Equal("0.4.0", project.Descendants("Version").Single().Value);
+        Assert.Contains(project.Descendants("Resource"), r => (string?)r.Attribute("Include") == "Assets/Sprites/*.png");
+        Assert.All(project.Descendants("Resource"), r => Assert.Contains((string)r.Attribute("Include")!, new[] { "Assets/Sprites/*.png", "Assets/Branding/chih-icon.ico" }));
         var excludes = project.Descendants("DefaultItemExcludes").Single().Value;
         Assert.Contains("references/**", excludes); Assert.Contains("Assets/Backups/**", excludes); Assert.Contains("artifacts/**", excludes);
         var defaults = project.Descendants("None").Single(e => (string?)e.Attribute("Update") == "appsettings.json");

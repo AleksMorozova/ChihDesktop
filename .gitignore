@@ -54,3 +54,5 @@ tools/ReminderChecks/sprite-hashes-before*.json
 *.msi
 # Unused historical preview; provenance has not been established.
 Assets/chih-preview.png
+ChihDesktop-Setup-*.exe
+ChihDesktop-Setup-*.exe.sha256

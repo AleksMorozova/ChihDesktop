@@ -70,3 +70,16 @@ test('production browser has correct external CSS and an expected native-only no
   expect(response.status()).toBe(200);
   expect(await response.text()).not.toContain('ДЕМО · Разобрать заметки по проекту');
 });
+
+test('Calendar Coming Soon matches integration cards and remains offline at narrow widths', async ({ page }) => {
+  await page.goto('http://127.0.0.1:5187/');
+  await page.getByRole('button', { name: /Google Calendar/ }).click();
+  const cards = page.getByRole('region', { name: 'Интеграции' });
+  await expect(cards.getByRole('heading', { name: 'Google Calendar' })).toBeVisible();
+  await expect(cards.getByRole('button', { name: 'Google Calendar — скоро' })).toBeDisabled();
+  await expect(cards.getByRole('button', { name: 'GitHub — скоро' })).toBeDisabled();
+  await page.screenshot({ path: '../../artifacts/uat/integrations-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 640, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(640);
+  await page.screenshot({ path: '../../artifacts/uat/integrations-narrow.png', fullPage: true });
+});

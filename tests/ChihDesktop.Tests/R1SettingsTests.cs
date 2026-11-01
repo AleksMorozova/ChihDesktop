@@ -108,10 +108,10 @@ public sealed class R1SettingsTests
         using var files = new TempFiles(); string path = files.File("user-settings.json");
         string draft = JsonSerializer.Serialize(new UserSettings { SchemaVersion = 0, OwnerDisplayName = "Synthetic owner", TimeZoneId = "UTC" }, ReminderDataCodec.JsonOptions);
         File.WriteAllText(path, draft); var store = new UserSettingsStore(path);
-        var result = store.Load(); Assert.True(result.CanWrite); Assert.Equal(1, result.Data!.SchemaVersion);
+        var result = store.Load(); Assert.True(result.CanWrite); Assert.Equal(2, result.Data!.SchemaVersion);
         Assert.Equal(draft, File.ReadAllText(path)); Assert.False(File.Exists(path + ".schema-v0-backup"));
         Assert.True(store.Save(result.Data)); Assert.Equal(draft, File.ReadAllText(path + ".schema-v0-backup"));
-        Assert.Equal(1, new UserSettingsStore(path).Load().Data!.SchemaVersion);
+        Assert.Equal(2, new UserSettingsStore(path).Load().Data!.SchemaVersion);
     }
 
     [Theory]

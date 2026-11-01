@@ -32,6 +32,9 @@ namespace ChihDesktop.Infrastructure.Migrations
                     b.Property<long>("CreatedAtUtcTicks")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long?>("DeliveredAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Description")
                         .HasColumnType("TEXT");
 
@@ -41,8 +44,17 @@ namespace ChihDesktop.Infrastructure.Migrations
                     b.Property<int>("Priority")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long?>("RemindAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ReminderStatus")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("Revision")
                         .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("SnoozedUntilUtcTicks")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("Status")

@@ -2,7 +2,7 @@ namespace ChihDesktop;
 
 public sealed record UserSettings
 {
-    public int SchemaVersion { get; init; } = 1;
+    public int SchemaVersion { get; init; } = 2;
     public string OwnerDisplayName { get; init; } = "";
     public string Language { get; init; } = "ru";
     public string TimeZoneId { get; init; } = TimeZoneInfo.Local.Id;
@@ -14,11 +14,15 @@ public sealed record UserSettings
     public int AnimationFps { get; init; } = 30;
     public bool ReminderNotificationsEnabled { get; init; } = true;
     public PersonalityOptions Personality { get; init; } = new();
+    public bool TaskReminderNotificationsEnabled { get; init; } = true;
+    public bool TaskSummarySpeechEnabled { get; init; }
+    public bool ShowTaskTitlesInBubbles { get; init; } = true;
+    public bool TaskCompletionReactionsEnabled { get; init; } = true;
     public bool OnboardingCompleted { get; init; }
 
     public UserSettings Validate()
     {
-        if (SchemaVersion != 1 || OwnerDisplayName is null || OwnerDisplayName.Trim().Length > 60 || OwnerDisplayName.Any(char.IsControl) || Language != "ru" ||
+        if (SchemaVersion != 2 || OwnerDisplayName is null || OwnerDisplayName.Trim().Length > 60 || OwnerDisplayName.Any(char.IsControl) || Language != "ru" ||
             !AppTimeZones.IsValid(TimeZoneId) || !double.IsFinite(CatSize) || CatSize is < 64 or > 400 || !double.IsFinite(WalkingSpeed) || WalkingSpeed is < 10 or > 500 ||
             AnimationFps is < 5 or > 60 || Personality is null || Personality.MinimumCommentIntervalMinutes is < 1 or > 1440)
             throw new ArgumentException("Проверьте имя (до 60 символов), часовой пояс и параметры Чиха.");
