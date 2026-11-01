@@ -73,11 +73,11 @@ internal static class AlphaPackaging
                 "Private/development payload file rejected: " + Relative(folder, file));
     }
 
-    public static void ValidatePublish(string folder, string rid, string host = "ChihDesktop.Mac")
+    public static void ValidatePublish(string folder, string rid, string? host = "ChihDesktop.Mac")
     {
         Privacy(folder); _ = Cpu(rid);
-        foreach (var name in Required.Append(host)) Require(File.Exists(Path.Combine(folder, name)), "Missing runtime dependency: " + name);
-        CheckCpu(Path.Combine(folder, host), rid);
+        foreach (var name in host is null ? Required : Required.Append(host)) Require(File.Exists(Path.Combine(folder, name)), "Missing runtime dependency: " + name);
+        if (host is not null) CheckCpu(Path.Combine(folder, host), rid);
         foreach (var lib in Files(folder).Where(f => f.EndsWith(".dylib", StringComparison.Ordinal))) CheckCpu(lib, rid);
         using var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "ChihDesktop.Mac.runtimeconfig.json")));
         var options = config.RootElement.GetProperty("runtimeOptions");
@@ -124,10 +124,12 @@ internal static class AlphaPackaging
     {
         Require(Path.GetFileName(Path.TrimEndingDirectorySeparator(app)) == "ChihDesktop.app", "Unexpected bundle name");
         Privacy(app); string mac = Path.Combine(app, "Contents/MacOS");
-        ValidatePublish(mac, rid, "ChihDesktop");
+        string payload = Path.Combine(app, "Contents/Resources/runtime");
+        CheckBundleHost(mac, rid);
+        ValidatePublish(payload, rid, null);
         CheckPlist(File.ReadAllText(Path.Combine(app, "Contents/Info.plist")), version, build);
         Require(IsIcns(File.ReadAllBytes(Path.Combine(app, "Contents/Resources/chih-icon.icns"))), "Invalid ICNS container");
-        CheckPublishFiles(publish, mac, rid, signedManifest is not null);
+        CheckPublishFiles(publish, payload, rid, signedManifest is not null);
         if (!OperatingSystem.IsWindows())
             Require((File.GetUnixFileMode(Path.Combine(mac, "ChihDesktop")) & UnixFileMode.UserExecute) != 0, "Bundle executable lacks execute permission");
         if (signedManifest is not null)
@@ -136,12 +138,23 @@ internal static class AlphaPackaging
             CheckManifest(app, signedManifest);
         }
     }
+    private static void CheckBundleHost(string mac, string rid)
+    {
+        string host = Path.Combine(mac, "ChihDesktop");
+        Require(Directory.EnumerateFileSystemEntries(mac).Count() == 1 && File.Exists(host), "MacOS must contain only the native apphost, not managed assemblies");
+        CheckCpu(host, rid);
+        Require(File.ReadAllBytes(host).AsSpan().IndexOf("../Resources/runtime/ChihDesktop.Mac.dll\0"u8) >= 0,
+            "Bundle apphost does not point to the self-contained Resources/runtime payload");
+    }
     private static void CheckPublishFiles(string publish, string mac, string rid, bool signed)
     {
         foreach (var file in Files(publish))
         {
             string relative = Relative(publish, file);
-            string target = Path.Combine(mac, relative == "ChihDesktop.Mac" ? "ChihDesktop" : relative);
+            // The bundle's apphost is generated separately by the SDK with a relative
+            // managed entry path; every other publish file retains its payload path.
+            if (relative == "ChihDesktop.Mac") continue;
+            string target = Path.Combine(mac, relative);
             Require(File.Exists(target), "Publish file missing in bundle: " + relative);
             // codesign changes Mach-O bytes. Compare the original bytes BEFORE signing;
             // afterwards native codesign + the external final manifest protect those files.
@@ -252,14 +265,14 @@ internal static class AlphaPackaging
             string app = Path.Combine(temp.FullName, "ChihDesktop.app"), publish = Path.Combine(temp.FullName, "publish");
             string mac = Path.Combine(app, "Contents/MacOS"), seal = Path.Combine(app, "Contents/_CodeSignature");
             Directory.CreateDirectory(mac); Directory.CreateDirectory(seal); Directory.CreateDirectory(publish);
-            File.WriteAllBytes(Path.Combine(publish, "ChihDesktop.Mac"), header);
-            File.WriteAllBytes(Path.Combine(mac, "ChihDesktop"), header);
+            File.WriteAllBytes(Path.Combine(publish, "fixture.dylib"), header);
+            File.WriteAllBytes(Path.Combine(mac, "fixture.dylib"), header);
             File.WriteAllText(Path.Combine(publish, "managed.dll"), "synthetic managed payload");
             File.Copy(Path.Combine(publish, "managed.dll"), Path.Combine(mac, "managed.dll"));
             File.WriteAllText(Path.Combine(seal, "CodeResources"), "synthetic seal, not a real signature");
             void Reject(Action action) { bool rejected = false; try { action(); } catch (InvalidDataException) { rejected = true; } Test(rejected); }
             CheckPublishFiles(publish, mac, "osx-arm64", false); Test(true);
-            File.AppendAllText(Path.Combine(mac, "ChihDesktop"), "synthetic signature bytes");
+            File.AppendAllText(Path.Combine(mac, "fixture.dylib"), "synthetic signature bytes");
             Reject(() => CheckPublishFiles(publish, mac, "osx-arm64", false));
             CheckPublishFiles(publish, mac, "osx-arm64", true); Test(true);
             string manifest = Path.Combine(temp.FullName, "signed-manifest.json");
@@ -269,8 +282,17 @@ internal static class AlphaPackaging
             Reject(() => CheckPublishFiles(publish, mac, "osx-arm64", true));
             Reject(() => CheckManifest(app, manifest));
             File.Copy(Path.Combine(publish, "managed.dll"), Path.Combine(mac, "managed.dll"), true);
-            File.AppendAllText(Path.Combine(mac, "ChihDesktop"), "post-sign mutation");
+            File.AppendAllText(Path.Combine(mac, "fixture.dylib"), "post-sign mutation");
             Reject(() => CheckManifest(app, manifest));
+            string hostFolder = Path.Combine(temp.FullName, "host-only"); Directory.CreateDirectory(hostFolder);
+            string host = Path.Combine(hostFolder, "ChihDesktop");
+            File.WriteAllBytes(host, [.. header, .. "../Resources/runtime/ChihDesktop.Mac.dll\0"u8]);
+            CheckBundleHost(hostFolder, "osx-arm64"); Test(true);
+            File.WriteAllText(Path.Combine(hostFolder, "Microsoft.CSharp.dll"), "synthetic PE payload");
+            Reject(() => CheckBundleHost(hostFolder, "osx-arm64"));
+            File.Delete(Path.Combine(hostFolder, "Microsoft.CSharp.dll"));
+            File.WriteAllBytes(host, header);
+            Reject(() => CheckBundleHost(hostFolder, "osx-arm64"));
             File.Delete(Path.Combine(seal, "CodeResources"));
             Reject(() => CheckManifest(app, manifest));
         }

@@ -183,8 +183,13 @@ sharing logs/crash reports/screenshots. The app does not load private tasks or r
 - Stable alpha bundle identity: `org.chihdesktop.alpha`; executable `ChihDesktop`;
   display name `ChihDesktop Alpha`; package APPL; minimum macOS 14.0; Retina enabled.
 - Assembly/DLL/deps/runtimeconfig remain named ChihDesktop.Mac. Only the packaged
-  native app host is renamed, without load-path patching. All RID publish files are
-  compared by hash before signing. Signing changes native bytes: non-Mach-O payloads
+  runtime payload lives in `Contents/Resources/runtime`, including its native
+  sidecars. `Contents/MacOS` contains only the native launcher. The SDK CreateAppHost
+  task binds that launcher to `../Resources/runtime/ChihDesktop.Mac.dll`; no shell
+  launcher, hand-edited Mach-O load commands or system .NET installation is used.
+  Managed PE DLLs must not be put in MacOS: codesign treats that folder as nested
+  native code. All other RID publish files are compared by hash before signing.
+  Signing changes native bytes: non-Mach-O payloads
   still match publish hashes afterwards, while signatures and an external final
   manifest protect the complete signed bundle before and after ZIP extraction.
 - Short version comes from the project. CFBundleVersion is the numeric workflow
@@ -204,6 +209,11 @@ sharing logs/crash reports/screenshots. The app does not load private tasks or r
   No bundle writes occur after the final signing step. Signing does not use --deep;
   recursive --deep is required only for verification. No hardened runtime or
   entitlement-preservation policy is claimed for this test alpha.
+- `CHIH_ALPHA_TRACE=1` temporarily enables CI stage/script/line/exit diagnostics.
+  It does not enable shell xtrace, dump environment variables or print arbitrary
+  command arguments. Signing failures also print the tail of the signing log;
+  full diagnostics are uploaded even if packaging fails. The mock regression
+  assessment is labeled `MOCK spctl` to distinguish it from native policy output.
 - Code/artwork licenses, restored dependency license files/copyright metadata and
   runtime notices are included. This collection is not a legal certification; review
   dependencies again before a public signed release.

@@ -27,6 +27,7 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      CHIH_ALPHA_TRACE: '1' # Temporary safe stage/line/status diagnostics, never shell xtrace.
     steps:
       - name: Checkout source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

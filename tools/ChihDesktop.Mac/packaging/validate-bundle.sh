@@ -5,6 +5,9 @@ app="${1:?app required}"; publish="${2:?publish directory required}"; rid="${3:?
 version="${4:?version required}"; build="${5:?build required}"; work="${6:?fresh validation directory required}"
 manifest="${7-}"
 here="$(cd "$(dirname "$0")" && pwd -P)"
+source "$here/diagnostics.sh"
+alpha_enable_diagnostics
+alpha_stage bundle-validation
 source "$here/architecture.sh"
 source "$here/native-dependencies.sh"
 source "$here/sign-alpha.sh"
@@ -57,7 +60,7 @@ capture_binary() {
 capture_binary "$exe"
 while IFS= read -r -d '' library; do
   [[ "$library" == "$exe" ]] || { if alpha_is_macho "$library"; then capture_binary "$library"; fi; }
-done < <(find "$app/Contents/MacOS" -type f -print0)
+done < <(find "$app/Contents" -type f -print0)
 # No GUI or binary patching: reject real external LOAD commands, preserve ID metadata.
 check_binary() {
   local binary="$1"
@@ -66,7 +69,7 @@ check_binary() {
 check_binary "$exe"
 while IFS= read -r -d '' library; do
   [[ "$library" == "$exe" ]] || { if alpha_is_macho "$library"; then check_binary "$library"; fi; }
-done < <(find "$app/Contents/MacOS" -type f -print0)
+done < <(find "$app/Contents" -type f -print0)
 "$checker" --self-test
 "$checker" --self-test-packaging
 if [[ -n "$manifest" ]]; then alpha_verify_signature "$app" "$work"; fi

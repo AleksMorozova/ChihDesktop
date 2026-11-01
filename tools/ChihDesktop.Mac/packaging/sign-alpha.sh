@@ -1,5 +1,5 @@
 #!/bin/bash
-# Flat self-contained alpha payload: explicitly sign native leaves, then the app.
+# Self-contained alpha payload: explicitly sign native leaves, then the app.
 # No Developer ID, hardened-runtime claim, notarization or --deep signing.
 alpha_is_macho() { [[ "$(file -b "$1")" == *Mach-O* ]]; }
 
@@ -35,12 +35,17 @@ alpha_gatekeeper_diagnostic() {
   local app="$1" work="$2" status
   if spctl --assess --type execute --verbose=4 "$app" > "$work/spctl.txt" 2>&1; then status=0; else status=$?; fi
   printf '\nAssessment exit status: %s (diagnostic only; ad-hoc is not Developer ID/notarization)\n' "$status" >> "$work/spctl.txt"
-  cat "$work/spctl.txt"
+  cat "$work/spctl.txt" || return 1
+  return 0 # A policy rejection is not a failed integrity check.
 }
 
 alpha_sign_bundle() {
   local app="$1" work="$2" binary count=0 index=0 inherited_status
   [[ -f "$app/Contents/Info.plist" && -x "$app/Contents/MacOS/ChihDesktop" ]] || return 1
+  # Managed PE files in this native-code directory make outer codesign fail.
+  [[ "$(find "$app/Contents/MacOS" -type f | wc -l | tr -d ' ')" == 1 ]] || {
+    echo 'Contents/MacOS must contain only the native launcher; put managed data under Resources/runtime.' >&2; return 1;
+  }
   [[ ! -e "$work" ]] || { echo 'Signing diagnostics directory must be fresh' >&2; return 1; }
   mkdir -p "$work" || return 1
   # Capture inherited identities before replacing them; never assume publish == app signing.
@@ -61,12 +66,21 @@ alpha_sign_bundle() {
   done < <(find "$app/Contents" -type f -print0)
   [[ "$count" -gt 0 ]] || { echo 'No nested native code found to sign' >&2; return 1; }
   # This final write signs the main executable and seals Info.plist and all resources.
-  codesign --force --sign - --timestamp=none --identifier org.chihdesktop.alpha "$app" >> "$work/codesign-sign.txt" 2>&1 || return 1
+  if codesign --force --sign - --timestamp=none --identifier org.chihdesktop.alpha "$app" >> "$work/codesign-sign.txt" 2>&1; then :; else
+    local status=$?
+    echo "Outer bundle codesign failed (exit $status):" >&2
+    tail -n 8 "$work/codesign-sign.txt" >&2
+    return "$status"
+  fi
   alpha_verify_signature "$app" "$work"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   set -euo pipefail
+  here="$(cd "$(dirname "$0")" && pwd -P)"
+  source "$here/diagnostics.sh"
+  alpha_enable_diagnostics
+  alpha_stage sign-bundle
   [[ "$(uname -s)" == Darwin ]] || { echo 'Ad-hoc signing requires macOS codesign.' >&2; exit 2; }
   alpha_sign_bundle "${1:?app required}" "${2:?fresh diagnostic directory required}"
 fi

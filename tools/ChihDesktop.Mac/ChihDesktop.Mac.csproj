@@ -16,4 +16,16 @@
     <EmbeddedResource Include="../../Assets/Branding/chih-icon.png" LogicalName="Branding.chih-icon.png" />
     <EmbeddedResource Include="../../tools/PersistenceChecks/sprite-baseline.json" LogicalName="Sprites.baseline.json" />
   </ItemGroup>
+  <!-- Use the SDK apphost writer, not a hand-patched/shell launcher. This target is
+       invoked only by alpha packaging, before any signatures are applied. -->
+  <Target Name="CreateAlphaBundleHost" DependsOnTargets="_GetAppHostPaths">
+    <Error Condition="'$(RuntimeIdentifier)' != 'osx-arm64' and '$(RuntimeIdentifier)' != 'osx-x64'" Text="A supported macOS RID is required." />
+    <Error Condition="'$(AlphaBundleHostPath)' == ''" Text="AlphaBundleHostPath is required." />
+    <Error Condition="!Exists('$(TargetPath)')" Text="Publish this RID before creating the bundle host." />
+    <CreateAppHost AppHostSourcePath="$(AppHostSourcePath)"
+                   AppHostDestinationPath="$(AlphaBundleHostPath)"
+                   AppBinaryName="../Resources/runtime/ChihDesktop.Mac.dll"
+                   IntermediateAssembly="$(TargetPath)"
+                   EnableMacOSCodeSign="false" />
+  </Target>
 </Project>

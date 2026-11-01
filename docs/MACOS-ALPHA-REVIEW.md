@@ -153,3 +153,63 @@ jobs must successfully verify the final and extracted bundles, and the tester mu
 retry a newly downloaded ZIP. Ad-hoc integrity is not Developer ID trust and does
 not guarantee Gatekeeper approval. Never remove quarantine or disable Gatekeeper
 to conceal a broken signature. See [tester guidance](MACOS-ALPHA.md).
+
+## Follow-up: actual outer-signing failure after the preflight PASS
+
+The agent retrieved the actual job logs and diagnostic ZIPs through the connected
+GitHub tools (GitHub CLI is not installed locally):
+[run 41330229275](https://github.com/AleksMorozova/ChihDesktop/actions/runs/41330229275),
+commit `e4d3a0f02bb1db854e57496661439bbbadfd5bda`.
+Both jobs failed, and the validated application artifact upload was skipped.
+
+The last PASS was **pre-sign** validation, not the final ZIP verification. The next
+operation was signing; its redirected `codesign-sign.txt` contained the real error:
+
+```text
+codesign --force --sign - --timestamp=none --identifier org.chihdesktop.alpha ChihDesktop.app
+code object is not signed at all
+In subcomponent: .../Contents/MacOS/System.Diagnostics.Contracts.dll
+```
+
+Intel reported the same failure for `Contents/MacOS/Microsoft.CSharp.dll`.
+The first reported PE assembly depends on traversal order. Managed PE DLLs had
+been copied into the bundle's native-code directory, where outer codesign treated
+them as unsigned nested code. That failing command was normalized to exit 1 by
+`alpha_sign_bundle`, terminating the strict build script. No ZIP creation or
+post-extraction verification was reached. The earlier “rejected: not Developer ID”
+was from the mocked regression assessment, not a live Gatekeeper rejection.
+
+The corrected layout places only the SDK-generated native launcher in MacOS.
+The complete self-contained payload and native sidecars stay together under
+`Contents/Resources/runtime`. The pinned SDK CreateAppHost task binds the launcher
+to `../Resources/runtime/ChihDesktop.Mac.dll` before signing; .NET resolves its
+self-contained runtime from that managed app root. No manually patched Mach-O
+load commands, separately installed .NET, shell launcher or symlinks are required.
+All native files still receive explicit signatures and architecture/dependency
+checks. Managed PE files are sealed as resources instead of treated as native code.
+The preflight rejects any extra MacOS entries, compares all other publish files,
+and validates the generated apphost's CPU and relative entry path.
+
+Temporary `CHIH_ALPHA_TRACE=1` records stage, script basename, line and exit status
+without printing argv/environment or enabling xtrace. Outer codesign failures
+also print their diagnostic tail instead of hiding it in an uploaded artifact.
+Successful diagnostic helpers explicitly return zero; real integrity failures
+still propagate. Codesign, manifest and ZIP round-trip checks remain mandatory.
+
+Actual local verification for this follow-up:
+
+- Debug/Release builds and both self-contained publishes passed with NU1900
+  vulnerability-service warnings, no compilation errors.
+- The SDK generated both native launchers successfully; portable inspection
+  verified arm64/x86_64 headers and the embedded relative managed entry path.
+- 6,055 prototype assertions and 26 packaging assertions passed per configuration.
+- Bash syntax/actionlint passed; 24 architecture, 39 dependency and 73 signing/
+  strict-shell checks passed. The strict-shell cases cover success despite mock
+  spctl exit 3, native/outer signing failure, failed strict verification, failed ZIP,
+  failed extracted validation, pipefail, command substitution and nounset for both
+  RIDs. These are synthetic orchestration tests, not real codesign/ditto runs.
+- Windows Release: 214 tests passed; artwork, branding and installer unchanged.
+
+**A fresh native run on the new revision is required for both architectures.**
+Re-running the old commit cannot test these local changes. No workflow was
+dispatched, pushed or published by the agent, and no new CI success is claimed.

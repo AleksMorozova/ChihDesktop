@@ -4,6 +4,9 @@ set -euo pipefail
 rid="${1:?Usage: build-alpha.sh osx-arm64|osx-x64 build-number}"
 build="${2:?Build number required}"
 here="$(cd "$(dirname "$0")" && pwd -P)"
+source "$here/diagnostics.sh"
+alpha_enable_diagnostics
+alpha_stage prerequisites
 source "$here/architecture.sh"
 arch="$(mac_arch_for_rid "$rid")"
 [[ "$build" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || { echo 'Invalid numeric bundle build' >&2; exit 2; }
@@ -31,6 +34,7 @@ source_height="$(printf '%s\n' "$source_size" | awk '/pixelHeight:/ { print $2 }
 [[ "$source_width" == "$source_height" && "$source_width" -ge 1024 ]] || { echo 'Approved icon must be square and at least 1024 px; refusing to distort artwork.' >&2; exit 1; }
 shasum -a 256 "$repo"/Assets/Sprites/*.png "$source_png" "$repo/Assets/Branding/chih-icon.ico" > "$out/artwork-before.sha256"
 
+alpha_stage build-publish
 dotnet restore ChihDesktop.Mac.csproj
 dotnet build ChihDesktop.Mac.csproj -c Release --no-restore
 dotnet run --project ChihDesktop.Mac.csproj -c Release --no-build --no-restore -- --self-test
@@ -42,8 +46,13 @@ dotnet publish ChihDesktop.Mac.csproj -c Release -r "$rid" --self-contained true
 "$publish/ChihDesktop.Mac" --alpha-check-publish "$publish" "$rid"
 
 # Copy only fresh publish files, not the repository or any user-data directory.
-ditto "$publish" "$app/Contents/MacOS"
-mv "$app/Contents/MacOS/ChihDesktop.Mac" "$app/Contents/MacOS/ChihDesktop"
+alpha_stage assemble-bundle
+payload="$app/Contents/Resources/runtime"
+ditto "$publish" "$payload"
+rm "$payload/ChihDesktop.Mac" # Only the copied raw host; never change original publish.
+dotnet msbuild ChihDesktop.Mac.csproj -nologo -t:CreateAlphaBundleHost \
+  -p:Configuration=Release "-p:RuntimeIdentifier=$rid" -p:SelfContained=true \
+  "-p:AlphaBundleHostPath=$app/Contents/MacOS/ChihDesktop"
 chmod 755 "$app/Contents/MacOS/ChihDesktop"
 cp "$here/Info.plist" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$app/Contents/Info.plist"
@@ -62,18 +71,26 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/chih-icon.icns"
 # All resources/load commands are final before signing. Preflight compares raw publish bytes.
+alpha_stage pre-sign-validation
 bash "$here/validate-bundle.sh" "$app" "$publish" "$rid" "$version" "$build" "$out/check-before-sign"
+alpha_stage sign-bundle
 bash "$here/sign-alpha.sh" "$app" "$out/signing"
 # Do not write inside the bundle after signing (including manifests or diagnostics).
+alpha_stage signed-manifest
 manifest="$out/dist/ChihDesktop-macos-alpha-$version-$rid.bundle-manifest.json"
 "$app/Contents/MacOS/ChihDesktop" --alpha-manifest "$app" "$manifest"
+alpha_stage signed-validation
 bash "$here/validate-bundle.sh" "$app" "$publish" "$rid" "$version" "$build" "$out/check-before-zip" "$manifest"
 
 zip="$out/dist/ChihDesktop-macos-alpha-$version-$rid.zip"
+alpha_stage zip-creation
 ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
+alpha_stage zip-extraction
 extracted="$(mktemp -d "$out/extracted.XXXXXX")"
 ditto -x -k "$zip" "$extracted"
+alpha_stage extracted-validation
 bash "$here/validate-bundle.sh" "$extracted/ChihDesktop.app" "$publish" "$rid" "$version" "$build" "$out/check-after-zip" "$manifest"
+alpha_stage artwork-and-artifact-staging
 shasum -a 256 -c "$out/artwork-before.sha256"
 (
   cd "$out/dist"
@@ -86,3 +103,4 @@ shasum -a 256 -c "$out/artwork-before.sha256"
   printf 'codesign --verify --deep --strict passed before and after ditto ZIP extraction; spctl is diagnostic only.\n'
 } > "$out/dist/build-info.txt"
 echo "PASS: ready for artifact upload: $zip"
+alpha_stage complete
