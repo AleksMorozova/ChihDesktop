@@ -214,6 +214,10 @@ sharing logs/crash reports/screenshots. The app does not load private tasks or r
   command arguments. Signing failures also print the tail of the signing log;
   full diagnostics are uploaded even if packaging fails. The mock regression
   assessment is labeled `MOCK spctl` to distinguish it from native policy output.
+  Each entry script explicitly marks normal completion as its final operation;
+  this prevents Bash 3.2 EXIT traps from masking a nounset abort as exit zero.
+  Prerequisites and their child scenarios reuse the invoking Bash interpreter;
+  the workflow invokes macOS `/bin/bash` explicitly and logs its version.
 - Code/artwork licenses, restored dependency license files/copyright metadata and
   runtime notices are included. This collection is not a legal certification; review
   dependencies again before a public signed release.

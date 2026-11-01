@@ -213,3 +213,53 @@ Actual local verification for this follow-up:
 **A fresh native run on the new revision is required for both architectures.**
 Re-running the old commit cannot test these local changes. No workflow was
 dispatched, pushed or published by the agent, and no new CI success is claimed.
+
+## Follow-up: Bash 3.2 prerequisites failure, not Gatekeeper assessment
+
+Retrieved both job logs from
+[run 41331873489](https://github.com/AleksMorozova/ChihDesktop/actions/runs/41331873489)
+on commit `9158393421d77c176ac3c39ae407227fd000d065`. Both failed during prerequisites,
+before building the app. Reproducing the original script with GNU Bash 3.2.57
+identified the exact assertion:
+
+```text
+test-signing.sh: osx-arm64 / nounset-failure
+pass test "$status" = "$expected"
+expected=1, actual status=0
+FAIL: test 0 = 1
+```
+
+Both jobs run the same two-RID prerequisite suite and encounter this first ARM64
+scenario; it is a shell-version problem, not an ARM instruction failure. The child
+deliberately reads `CHIH_ALPHA_MISSING_TEST_VAR` under set -u. Bash 3.2 supplies zero
+to the EXIT trap in this case; cleanup/diagnostic handling then allowed exit zero.
+Windows Git Bash did not reproduce it. The preceding mock spctl exit 3 had already
+been captured correctly and was unrelated to the failing assertion.
+
+The EXIT handler now requires an explicit normal-completion marker and explicitly
+exits with the preserved failure status. An unexpected early exit zero or nounset
+abort without that marker becomes exit 1. Build, validation, signing and test entry
+scripts mark completion only after their required operations pass. The test cleanup
+handler uses the same fail-closed rule. Scenario failures now print RID, scenario,
+expected/actual status, Bash version and the synthetic child-log tail rather than
+an unexplained numeric assertion. macOS /bin/bash and the same child interpreter
+are used explicitly; no upgrade or skipped negative test is required.
+
+Executed locally:
+
+- Before fix: GNU Bash 3.2.57 reproduced the exact nounset assertion failure.
+- After fix: GNU Bash 3.2.57 (Linux disposable container, read-only repository,
+  no container networking) and Windows Git Bash 5.3.15 each passed 24 architecture,
+  39 dependency and 89 signing/strict-shell checks; Bash syntax and actionlint passed.
+- New cases explicitly verify raw spctl status 3 versus diagnostic-wrapper status 0,
+  invalid native signatures after a diagnostic-only rejection, and premature exit
+  zero. Existing codesign, failed ZIP/extracted validation and shell-error checks
+  remain enabled. The tests use mocks, not native codesign/spctl/ditto.
+- The Mac-only symlink fixture remains untested locally; the earlier native CI log
+  passed its 41 dependency assertions. No native macOS run of this revision occurred.
+
+Docker was used solely as an ephemeral development tool to execute the older Bash;
+there is no new Docker build step or runtime dependency. No WPF, installer, artwork,
+branding or user data changes were made. A fresh workflow run on the reviewed new
+revision is required to confirm native prerequisites and subsequent packaging for
+both architectures; neither job is claimed green.

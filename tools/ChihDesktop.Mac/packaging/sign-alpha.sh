@@ -83,4 +83,5 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   alpha_stage sign-bundle
   [[ "$(uname -s)" == Darwin ]] || { echo 'Ad-hoc signing requires macOS codesign.' >&2; exit 2; }
   alpha_sign_bundle "${1:?app required}" "${2:?fresh diagnostic directory required}"
+  alpha_complete
 fi

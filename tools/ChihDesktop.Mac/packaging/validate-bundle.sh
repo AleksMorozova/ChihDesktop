@@ -74,3 +74,4 @@ done < <(find "$app/Contents" -type f -print0)
 "$checker" --self-test-packaging
 if [[ -n "$manifest" ]]; then alpha_verify_signature "$app" "$work"; fi
 echo 'PASS: structure/plist/icon/native dependencies/permissions/manifest/non-GUI checks. Desktop behavior NOT tested.'
+alpha_complete

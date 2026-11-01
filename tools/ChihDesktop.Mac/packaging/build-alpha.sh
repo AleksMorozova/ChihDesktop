@@ -14,9 +14,9 @@ arch="$(mac_arch_for_rid "$rid")"
 project="$(cd "$here/.." && pwd -P)"
 repo="$(cd "$here/../../.." && pwd -P)"
 cd "$project" # Select the Mac-only pinned global.json, never the WPF solution.
-bash "$here/test-architecture.sh"
-bash "$here/test-native-dependencies.sh"
-bash "$here/test-signing.sh"
+"$BASH" "$here/test-architecture.sh"
+"$BASH" "$here/test-native-dependencies.sh"
+"$BASH" "$here/test-signing.sh"
 [[ ! -L "$repo/artifacts" && ! -L "$repo/artifacts/mac-alpha" ]] || { echo 'Symlink output parent rejected' >&2; exit 1; }
 out="$repo/artifacts/mac-alpha/$rid"
 [[ ! -e "$out" && ! -L "$out" ]] || { echo "Refusing to overwrite $out" >&2; exit 1; }
@@ -104,3 +104,4 @@ shasum -a 256 -c "$out/artwork-before.sha256"
 } > "$out/dist/build-info.txt"
 echo "PASS: ready for artifact upload: $zip"
 alpha_stage complete
+alpha_complete

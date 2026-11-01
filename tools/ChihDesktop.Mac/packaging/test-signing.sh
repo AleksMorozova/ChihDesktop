@@ -5,7 +5,15 @@ source "$here/sign-alpha.sh"
 temp_base="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
 test_root="$(mktemp -d "$temp_base/chih-sign-tests.XXXXXX")"
 cleanup() { case "$test_root" in "$temp_base"/chih-sign-tests.*) rm -rf -- "$test_root";; *) exit 1;; esac; }
-trap cleanup EXIT
+test_completed=0
+test_exit() {
+  local status="$1"
+  trap - EXIT
+  cleanup
+  if [[ "$status" == 0 && "$test_completed" != 1 ]]; then status=1; fi
+  exit "$status"
+}
+trap 'test_exit "$?"' EXIT
 app="$test_root/alpha with spaces/ChihDesktop.app"
 native="$app/Contents/Resources/runtime"
 mkdir -p "$app/Contents/MacOS" "$native"
@@ -20,6 +28,14 @@ checks=0
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { "$@" || fail "$*"; checks=$((checks + 1)); }
 reject() { if "$@" > "$test_root/rejected.txt" 2>&1; then fail "Accepted: $*"; fi; checks=$((checks + 1)); }
+scenario_status() {
+  local rid="$1" scenario="$2" expected="$3" actual="$4" log="$5"
+  if [[ "$actual" != "$expected" ]]; then
+    printf 'Scenario %s/%s: expected exit %s, actual %s (Bash %s)\n' "$rid" "$scenario" "$expected" "$actual" "$BASH_VERSION" >&2
+    tail -n 12 "$log" >&2
+    return 1
+  fi
+}
 file() { case "${2-}" in */ChihDesktop|*/createdump|*.dylib) echo 'Mach-O 64-bit executable arm64';; *) echo 'data';; esac; }
 plutil() { [[ "$1" == -lint && -s "$2" ]]; }
 codesign() {
@@ -67,7 +83,7 @@ if [[ "${1-}" == --scenario ]]; then
   alpha_stage architecture
   verify_macos_architecture "$2" "$app/Contents/MacOS/ChihDesktop"
   case "$scenario" in
-    success|zip-failure|extracted-failure|pipefail-failure|substitution-failure|nounset-failure) ;;
+    success|zip-failure|extracted-failure|pipefail-failure|substitution-failure|nounset-failure|invalid-native-after-assessment|early-exit) ;;
     native-failure) mock_sign_fail="$native/createdump";;
     outer-failure) mock_sign_fail="$app";;
     verify-failure) mock_verify_fail="$app";;
@@ -77,6 +93,8 @@ if [[ "${1-}" == --scenario ]]; then
   alpha_sign_bundle "$app" "$test_root/scenario-signing"
   alpha_stage gatekeeper-diagnostic
   alpha_gatekeeper_diagnostic "$app" "$test_root/scenario-signing"
+  if [[ "$scenario" == invalid-native-after-assessment ]]; then mock_verify_fail="$native/createdump"; fi
+  if [[ "$scenario" == early-exit ]]; then exit 0; fi # Must not count as normal completion.
   alpha_stage zip-creation
   if [[ "$scenario" == zip-failure ]]; then bash -c 'exit 51'; fi
   if [[ "$scenario" == pipefail-failure ]]; then bash -c 'exit 52' | cat; fi
@@ -86,8 +104,11 @@ if [[ "${1-}" == --scenario ]]; then
   if [[ "$scenario" == extracted-failure ]]; then mock_verify_fail="$app"; fi
   alpha_verify_signature "$app" "$test_root/scenario-extracted"
   echo STAGED
+  alpha_complete
   exit 0
 fi
+
+printf 'Signing prerequisites: Bash %s\n' "$BASH_VERSION"
 
 pass alpha_sign_bundle "$app" "$test_root/signing"
 pass test "$(grep -c '^leaf' "$events")" = 2
@@ -117,6 +138,10 @@ reject alpha_sign_bundle "$app" "$test_root/verification-failure"
 unset mock_verify_fail
 pass alpha_gatekeeper_diagnostic "$app" "$test_root/signing"
 pass grep -q 'Assessment exit status: 3' "$test_root/signing/spctl.txt"
+if spctl --assess --type execute --verbose=4 "$app" > "$test_root/raw-assessment.txt" 2>&1; then assessment_status=0; else assessment_status=$?; fi
+pass test "$assessment_status" = 3
+if alpha_gatekeeper_diagnostic "$app" "$test_root/signing" > "$test_root/diagnostic-output.txt"; then diagnostic_status=0; else diagnostic_status=$?; fi
+pass test "$diagnostic_status" = 0
 printf 'synthetic PE' > "$app/Contents/MacOS/Microsoft.CSharp.dll"
 reject alpha_sign_bundle "$app" "$test_root/invalid-layout"
 rm "$app/Contents/MacOS/Microsoft.CSharp.dll"
@@ -124,22 +149,24 @@ rm "$app/Contents/_CodeSignature/CodeResources"
 reject alpha_verify_signature "$app" "$test_root/missing-seal"
 
 for rid in osx-arm64 osx-x64; do
-  for scenario in success native-failure outer-failure verify-failure zip-failure extracted-failure pipefail-failure substitution-failure nounset-failure; do
+  for scenario in success native-failure outer-failure verify-failure zip-failure extracted-failure pipefail-failure substitution-failure nounset-failure invalid-native-after-assessment early-exit; do
     log="$test_root/$rid-$scenario.txt"
-    if bash "$0" --scenario "$rid" "$scenario" > "$log" 2>&1; then status=0; else status=$?; fi
+    if "$BASH" "$0" --scenario "$rid" "$scenario" > "$log" 2>&1; then status=0; else status=$?; fi
     case "$scenario" in
       success)
-        pass test "$status" = 0
+        pass scenario_status "$rid" "$scenario" 0 "$status" "$log"
         pass grep -q '^STAGED$' "$log"
         pass grep -q 'Assessment exit status: 3' "$log";;
       *)
         expected=1
         case "$scenario" in outer-failure) expected=82;; zip-failure) expected=51;; pipefail-failure) expected=52;; substitution-failure) expected=53;; esac
-        pass test "$status" = "$expected"
-        if [[ "$scenario" == nounset-failure ]]; then pass grep -q '^EXIT: stage=' "$log"; else pass grep -q '^FAIL: stage=' "$log"; fi
+        pass scenario_status "$rid" "$scenario" "$expected" "$status" "$log"
+        case "$scenario" in nounset-failure|early-exit) pass grep -q '^EXIT: stage=' "$log";; *) pass grep -q '^FAIL: stage=' "$log";; esac
+        if [[ "$scenario" == invalid-native-after-assessment ]]; then pass grep -q 'Assessment exit status: 3' "$log"; fi
         if grep -q '^STAGED$' "$log"; then fail "Staged artifact after $scenario"; fi
         checks=$((checks + 1));;
     esac
   done
 done
 echo "PASS: $checks signing-order/argv/resource-seal/failure/Gatekeeper-diagnostic checks (mock tools; native macOS verification still required)."
+test_completed=1
