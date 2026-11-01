@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Version>0.4.0</Version>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../ChihDesktop.Core/ChihDesktop.Core.csproj" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <EmbeddedResource Include="../../Assets/Sprites/*.png" LogicalName="Sprites.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../Assets/Branding/chih-icon.png" LogicalName="Branding.chih-icon.png" />
+    <EmbeddedResource Include="../../tools/PersistenceChecks/sprite-baseline.json" LogicalName="Sprites.baseline.json" />
+  </ItemGroup>
+</Project>
