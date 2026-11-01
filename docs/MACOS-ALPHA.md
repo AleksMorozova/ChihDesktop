@@ -11,9 +11,9 @@ allowed, so quit the previous instance before opening another.
 
 Workflow file: `.github/workflows/macos-alpha.yml`, display name **macOS alpha**.
 It has **only workflow_dispatch**: no automatic build on push, release or tag.
-This change is prepared locally; it has not been pushed or dispatched by the agent.
-There are no claimed GitHub run results or downloadable CI artifacts until a
-maintainer publishes the reviewed source/workflow and runs it.
+The agent does not push or dispatch this workflow. Download only from a successful
+run of the reviewed revision. Previous artifacts do not acquire later packaging
+or signing fixes automatically; request a rebuilt ZIP after a signature failure.
 
 The workflow and its required sources/assets must first be present on the repository's
 default branch for the manual Run workflow button to appear. A maintainer with
@@ -56,7 +56,9 @@ not prove transparency, Spaces or pointer behavior on a real user's desktop.
 ## Extract, verify and install
 
 GitHub may download an **outer artifact ZIP**. Extract that first. Inside are the
-versioned application ZIP, its `.zip.sha256` file and `build-info.txt`.
+versioned application ZIP, its `.zip.sha256` file, an external `.bundle-manifest.json`
+and `build-info.txt`. Keep the manifest outside the app; it records the final signed
+bundle bytes and is not an Apple trust credential.
 
 Before opening the application, check the repository, run/commit and build-info.
 In Terminal, change into the folder containing the inner ZIP and checksum, then:
@@ -79,12 +81,30 @@ ZIPs are generated with `ditto --keepParent`, and CI extracts them again to veri
 executable permission, every copied runtime file, the icon and the manifest.
 No DMG is generated in this alpha phase; copying the intact .app is the installation.
 
-## Unsigned and unnotarized — Gatekeeper
+## Ad-hoc signed and unnotarized — Gatekeeper
 
-This alpha is **not Developer ID signed or notarized**. The workflow does not run
-codesign or pretend to have an Apple signing identity. SDK/vendor binaries may
-contain their own platform or ad-hoc signatures; that does not make this complete
-application an identified-developer release. macOS may refuse to open it.
+This alpha is **not Developer ID signed or notarized**. The workflow explicitly
+replaces inherited native signatures with ad-hoc signatures, signs nested Mach-O
+files first, then seals the complete app last. It requires
+`codesign --verify --deep --strict --verbose=2` to pass on the finished app and again
+on the app extracted from the actual downloadable ZIP. Ad-hoc signing supplies
+integrity checks, not an identified-developer identity or Gatekeeper approval.
+macOS may still refuse to open it. `spctl` results are collected as diagnostics;
+a policy rejection alone is expected for this alpha and is not a signature pass.
+
+For a trusted downloaded app, collect signature diagnostics without modifying it:
+
+```sh
+codesign --display --verbose=4 /Applications/ChihDesktop.app
+codesign --verify --deep --strict --verbose=2 /Applications/ChihDesktop.app
+spctl --assess --type execute --verbose=4 /Applications/ChihDesktop.app
+```
+
+The resource seal must be at `Contents/_CodeSignature/CodeResources`, not beside
+the app or under Resources. A missing seal or failed strict verification is a
+packaging defect: stop and request a new build, rather than editing/re-signing the
+installed app or bypassing protections. CI signature/native diagnostics are in
+`ChihDesktop-macos-native-diagnostics-<RID>` for the corresponding workflow run.
 
 Only proceed if you recognize and trust the source and have verified the checksum.
 After attempting to open it, use **System Settings → Privacy & Security → Open Anyway**
@@ -96,7 +116,7 @@ Do **not** disable Gatekeeper system-wide, use `sudo spctl --master-disable`, re
 quarantine recursively, or bypass “will damage your computer”/malware warnings.
 If macOS reports damage, a missing signature, policy restrictions or no Open Anyway
 option, stop and report the exact message. Recheck the hash and request a rebuilt or
-properly signed app. The unsigned alpha is not guaranteed to open on every managed Mac.
+properly signed app. The ad-hoc alpha is not guaranteed to open on every managed Mac.
 
 ## Desktop acceptance checklist — not established by CI
 
@@ -163,8 +183,10 @@ sharing logs/crash reports/screenshots. The app does not load private tasks or r
 - Stable alpha bundle identity: `org.chihdesktop.alpha`; executable `ChihDesktop`;
   display name `ChihDesktop Alpha`; package APPL; minimum macOS 14.0; Retina enabled.
 - Assembly/DLL/deps/runtimeconfig remain named ChihDesktop.Mac. Only the packaged
-  native app host is renamed, without byte patching. All RID publish files are compared
-  by hash against the bundle, before and after ZIP extraction.
+  native app host is renamed, without load-path patching. All RID publish files are
+  compared by hash before signing. Signing changes native bytes: non-Mach-O payloads
+  still match publish hashes afterwards, while signatures and an external final
+  manifest protect the complete signed bundle before and after ZIP extraction.
 - Short version comes from the project. CFBundleVersion is the numeric workflow
   run number and attempt. Dock/normal Quit is retained (`LSUIElement=false`).
 - Approved PNG is downsampled into the ten standard/Retina iconset files using sips,
@@ -173,7 +195,15 @@ sharing logs/crash reports/screenshots. The app does not load private tasks or r
 - Portable validators check privacy exclusions, self-contained configuration, Mach-O
   CPUs, required native/runtime files, plist values, ICNS container and file manifest.
   macOS validation adds plutil, file/lipo, otool load commands and actual non-GUI
-  execution of the bundled app. No desktop GUI is started by CI.
+  execution of the bundled app. Extensionless Mach-O helpers such as createdump
+  are included in architecture, dependency and signature checks. No desktop GUI
+  is started by CI.
+- Order: finalize resources/plist/icon/native files → unsigned preflight → explicit
+  native ad-hoc signing → outer app seal → external manifest → strict verification
+  → ditto ZIP → fresh extraction → repeat strict verification and manifest checks.
+  No bundle writes occur after the final signing step. Signing does not use --deep;
+  recursive --deep is required only for verification. No hardened runtime or
+  entitlement-preservation policy is claimed for this test alpha.
 - Code/artwork licenses, restored dependency license files/copyright metadata and
   runtime notices are included. This collection is not a legal certification; review
   dependencies again before a public signed release.

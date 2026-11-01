@@ -1,5 +1,8 @@
 # macOS alpha packaging review — 2026-11-01
 
+This document records the original preparation and subsequent fixes. The signing
+follow-up at the end supersedes the original unsigned pipeline description.
+
 ## Implemented scope
 
 The isolated Avalonia prototype is preserved. The manual-only workflow at
@@ -97,3 +100,56 @@ records for each image, before and after extraction, and uploads them under
 `ChihDesktop-macos-native-diagnostics-<RID>` even when packaging fails.
 **No new native Actions result has been obtained by the agent. Both architecture
 jobs must pass before this packaging change is considered natively verified.**
+
+## Follow-up: ad-hoc signing and extracted-artifact integrity
+
+The tester reported “code has no resources but signature indicates they must be
+present.” The previous builder never signed the assembled app or generated its
+`Contents/_CodeSignature/CodeResources` resource seal. It copied/renamed binaries
+with SDK/vendor signatures, added Info.plist, icons, licenses and a manifest, then
+archived without running codesign verification. There was no native load-path
+patching: the prior dependency fix only changed validation.
+
+Portable inspection of the local raw payloads confirms the main apphost and
+universal Avalonia dylib carry ad-hoc CodeDirectory flags (`0x2`) in both target
+slices, while createdump carries a non-ad-hoc signature (`0x10000`). This is not a
+signature of the complete newly assembled app. The tester's exact failing ZIP is
+not available locally, so its specific signature/seal state cannot be independently
+verified on Windows. The next CI captures inherited identity, verification output
+and resource-seal locations before replacing signatures.
+
+New order:
+
+1. Finalize all publish files, executable naming/permissions, Info.plist, icon and
+   resources. Compare every copied publish byte and validate native dependencies.
+2. Explicitly ad-hoc sign and verify each nested Mach-O file, including extensionless
+   createdump. Sign the containing app last with identifier `org.chihdesktop.alpha`.
+   No --deep signing, preserved vendor entitlements, hardened-runtime policy,
+   Developer ID identity or notarization is claimed.
+3. Require the standard resource seal and deep/strict codesign verification.
+   Write the final full-file SHA-256 manifest **outside** the app. This avoids
+   circular hashes or any post-sign resource write. Managed payloads still match
+   original publish hashes; signed Mach-O files retain required architectures.
+4. Verify signatures/manifest/dependencies, create the actual ditto ZIP, extract
+   into a fresh mktemp directory, and repeat all final checks on that extracted app.
+   Any signature or manifest failure stops artifact upload. `spctl` runs only as a
+   recorded policy diagnostic; rejection does not waive codesign verification.
+
+Actual local results for this follow-up:
+
+- Mac project Debug/Release builds and both self-contained cross-publishes passed
+  with NU1900 warnings about the unavailable NuGet vulnerability service, no errors.
+- 6,055 prototype assertions and 23 packaging assertions passed per configuration.
+  The new assertions cover external manifests, changed native signatures, managed
+  payload tampering, post-sign native tampering and a missing resource seal.
+- Bash syntax, actionlint, 24 architecture checks, 39 dependency checks and 18
+  mocked signing-order/failure/strict-verification/Gatekeeper diagnostic checks
+  passed. The native directory-symlink test remains macOS-only.
+- Existing Windows Release regression suite: 214 passed, 0 failed, 0 skipped.
+
+**Native codesign/spctl/ditto verification for this revision: NOT RUN. No rebuilt
+ZIP is claimed fixed, and neither architecture job is claimed passing.** Both native
+jobs must successfully verify the final and extracted bundles, and the tester must
+retry a newly downloaded ZIP. Ad-hoc integrity is not Developer ID trust and does
+not guarantee Gatekeeper approval. Never remove quarantine or disable Gatekeeper
+to conceal a broken signature. See [tester guidance](MACOS-ALPHA.md).

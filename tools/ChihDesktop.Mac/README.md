@@ -47,10 +47,12 @@ dotnet publish tools/ChihDesktop.Mac -c Release -r osx-x64 --self-contained true
 These produce local raw publish folders, not `.app` or `.dmg` installers. Keep
 the whole folder together. Transfer to the matching Mac for native execution and
 signing validation; file-transfer execute bits and Gatekeeper must be checked.
-No signing, notarization or distribution has been performed.
+Raw publish folders are not signed app bundles. The separate alpha pipeline
+explicitly ad-hoc signs the completed app; it does not provide Developer ID signing
+or notarization.
 
 For the manual GitHub Actions workflow, self-contained `.app` packaging, checksums,
-unsigned-app guidance and desktop acceptance steps, see
+ad-hoc signing/Gatekeeper guidance and desktop acceptance steps, see
 [macOS alpha instructions](../../docs/MACOS-ALPHA.md). The packaging uses Apple's
 tools on matching native macOS runners; no CI run or macOS GUI acceptance is
 implied by the portable self-checks. Packaging SDK selection is pinned by this

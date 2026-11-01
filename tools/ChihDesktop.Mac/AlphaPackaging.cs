@@ -10,7 +10,6 @@ namespace ChihDesktop.Mac;
 // Portable packaging checks, not GUI tests. Mac-native tools perform additional validation.
 internal static class AlphaPackaging
 {
-    private const string ManifestName = "Contents/Resources/alpha-manifest.json";
     private static readonly string[] Required = ["ChihDesktop.Mac.dll", "ChihDesktop.Mac.deps.json", "ChihDesktop.Mac.runtimeconfig.json",
         "ChihDesktop.Core.dll", "libhostfxr.dylib", "libhostpolicy.dylib", "libcoreclr.dylib", "libAvaloniaNative.dylib", "libSkiaSharp.dylib"];
     private sealed record Entry(string Path, string Sha256);
@@ -24,7 +23,9 @@ internal static class AlphaPackaging
                 case ["--alpha-check-publish", var folder, var rid]: ValidatePublish(folder, rid); break;
                 case ["--alpha-check-bundle", var app, var publish, var rid, var version, var build]:
                     ValidateBundle(app, publish, rid, version, build); break;
-                case ["--alpha-manifest", var app]: WriteManifest(app); break;
+                case ["--alpha-check-bundle", var app, var publish, var rid, var version, var build, var manifest]:
+                    ValidateBundle(app, publish, rid, version, build, manifest); break;
+                case ["--alpha-manifest", var app, var output]: WriteManifest(app, output); break;
                 case ["--alpha-notices", var assets, var publish, var rid, var output, var mit]:
                     CollectNotices(assets, publish, rid, output, mit); break;
                 case ["--self-test-packaging"]: SelfTest(); return 0;
@@ -119,31 +120,55 @@ internal static class AlphaPackaging
         return offset == data.Length && images > 0;
     }
 
-    public static void ValidateBundle(string app, string publish, string rid, string version, string build)
+    public static void ValidateBundle(string app, string publish, string rid, string version, string build, string? signedManifest = null)
     {
         Require(Path.GetFileName(Path.TrimEndingDirectorySeparator(app)) == "ChihDesktop.app", "Unexpected bundle name");
         Privacy(app); string mac = Path.Combine(app, "Contents/MacOS");
         ValidatePublish(mac, rid, "ChihDesktop");
         CheckPlist(File.ReadAllText(Path.Combine(app, "Contents/Info.plist")), version, build);
         Require(IsIcns(File.ReadAllBytes(Path.Combine(app, "Contents/Resources/chih-icon.icns"))), "Invalid ICNS container");
+        CheckPublishFiles(publish, mac, rid, signedManifest is not null);
+        if (!OperatingSystem.IsWindows())
+            Require((File.GetUnixFileMode(Path.Combine(mac, "ChihDesktop")) & UnixFileMode.UserExecute) != 0, "Bundle executable lacks execute permission");
+        if (signedManifest is not null)
+        {
+            Require(File.Exists(Path.Combine(app, "Contents/_CodeSignature/CodeResources")), "Signed bundle resource seal missing");
+            CheckManifest(app, signedManifest);
+        }
+    }
+    private static void CheckPublishFiles(string publish, string mac, string rid, bool signed)
+    {
         foreach (var file in Files(publish))
         {
             string relative = Relative(publish, file);
             string target = Path.Combine(mac, relative == "ChihDesktop.Mac" ? "ChihDesktop" : relative);
-            Require(File.Exists(target) && Hash(file) == Hash(target), "Publish file missing/changed in bundle: " + relative);
-        }
-        if (!OperatingSystem.IsWindows())
-            Require((File.GetUnixFileMode(Path.Combine(mac, "ChihDesktop")) & UnixFileMode.UserExecute) != 0, "Bundle executable lacks execute permission");
-        if (File.Exists(Path.Combine(app, ManifestName)))
-        {
-            var manifest = JsonSerializer.Deserialize<Entry[]>(File.ReadAllText(Path.Combine(app, ManifestName))) ?? [];
-            var actual = Manifest(app);
-            Require(manifest.Length == actual.Length && manifest.SequenceEqual(actual), "Bundle manifest mismatch");
+            Require(File.Exists(target), "Publish file missing in bundle: " + relative);
+            // codesign changes Mach-O bytes. Compare the original bytes BEFORE signing;
+            // afterwards native codesign + the external final manifest protect those files.
+            if (signed && HasCpu(File.ReadAllBytes(file), Cpu(rid))) CheckCpu(target, rid);
+            else Require(Hash(file) == Hash(target), "Publish file changed in bundle: " + relative);
         }
     }
-    private static Entry[] Manifest(string app) => Files(app).Where(f => Relative(app, f) != ManifestName)
+    private static Entry[] Manifest(string app) => Files(app)
         .Select(f => new Entry(Relative(app, f), Hash(f))).OrderBy(f => f.Path, StringComparer.Ordinal).ToArray();
-    private static void WriteManifest(string app) => File.WriteAllText(Path.Combine(app, ManifestName), JsonSerializer.Serialize(Manifest(app), new JsonSerializerOptions { WriteIndented = true }));
+    private static void RequireExternalManifest(string app, string output)
+    {
+        string relative = Path.GetRelativePath(Path.GetFullPath(app), Path.GetFullPath(output));
+        Require(relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) || Path.IsPathRooted(relative),
+            "Manifest must remain outside the signed bundle");
+    }
+    private static void WriteManifest(string app, string output)
+    {
+        RequireExternalManifest(app, output);
+        Require(!File.Exists(output), "Refusing to overwrite manifest");
+        File.WriteAllText(output, JsonSerializer.Serialize(Manifest(app), new JsonSerializerOptions { WriteIndented = true }));
+    }
+    private static void CheckManifest(string app, string input)
+    {
+        RequireExternalManifest(app, input);
+        var expected = JsonSerializer.Deserialize<Entry[]>(File.ReadAllText(input)) ?? [];
+        Require(expected.Length > 0 && expected.SequenceEqual(Manifest(app)), "Signed bundle manifest mismatch");
+    }
 
     private static void CollectNotices(string assetsFile, string publish, string rid, string output, string projectMit)
     {
@@ -221,6 +246,35 @@ internal static class AlphaPackaging
         }
         bool duplicate = false; try { CheckPlist(plist.Replace("</dict>", "<key>CFBundleExecutable</key><string>Other</string></dict>"), "0.4.0", "1.1"); } catch (InvalidDataException) { duplicate = true; }
         Test(duplicate);
+        var temp = Directory.CreateTempSubdirectory("ChihDesktop-signing-tests-");
+        try
+        {
+            string app = Path.Combine(temp.FullName, "ChihDesktop.app"), publish = Path.Combine(temp.FullName, "publish");
+            string mac = Path.Combine(app, "Contents/MacOS"), seal = Path.Combine(app, "Contents/_CodeSignature");
+            Directory.CreateDirectory(mac); Directory.CreateDirectory(seal); Directory.CreateDirectory(publish);
+            File.WriteAllBytes(Path.Combine(publish, "ChihDesktop.Mac"), header);
+            File.WriteAllBytes(Path.Combine(mac, "ChihDesktop"), header);
+            File.WriteAllText(Path.Combine(publish, "managed.dll"), "synthetic managed payload");
+            File.Copy(Path.Combine(publish, "managed.dll"), Path.Combine(mac, "managed.dll"));
+            File.WriteAllText(Path.Combine(seal, "CodeResources"), "synthetic seal, not a real signature");
+            void Reject(Action action) { bool rejected = false; try { action(); } catch (InvalidDataException) { rejected = true; } Test(rejected); }
+            CheckPublishFiles(publish, mac, "osx-arm64", false); Test(true);
+            File.AppendAllText(Path.Combine(mac, "ChihDesktop"), "synthetic signature bytes");
+            Reject(() => CheckPublishFiles(publish, mac, "osx-arm64", false));
+            CheckPublishFiles(publish, mac, "osx-arm64", true); Test(true);
+            string manifest = Path.Combine(temp.FullName, "signed-manifest.json");
+            Reject(() => WriteManifest(app, Path.Combine(app, "manifest.json")));
+            WriteManifest(app, manifest); CheckManifest(app, manifest); Test(true);
+            File.AppendAllText(Path.Combine(mac, "managed.dll"), "tampered");
+            Reject(() => CheckPublishFiles(publish, mac, "osx-arm64", true));
+            Reject(() => CheckManifest(app, manifest));
+            File.Copy(Path.Combine(publish, "managed.dll"), Path.Combine(mac, "managed.dll"), true);
+            File.AppendAllText(Path.Combine(mac, "ChihDesktop"), "post-sign mutation");
+            Reject(() => CheckManifest(app, manifest));
+            File.Delete(Path.Combine(seal, "CodeResources"));
+            Reject(() => CheckManifest(app, manifest));
+        }
+        finally { temp.Delete(true); }
         Console.WriteLine($"PASS: {count} portable packaging parser/negative checks (not macOS tool or GUI validation).");
     }
 }

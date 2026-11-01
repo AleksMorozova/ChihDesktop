@@ -13,6 +13,7 @@ repo="$(cd "$here/../../.." && pwd -P)"
 cd "$project" # Select the Mac-only pinned global.json, never the WPF solution.
 bash "$here/test-architecture.sh"
 bash "$here/test-native-dependencies.sh"
+bash "$here/test-signing.sh"
 [[ ! -L "$repo/artifacts" && ! -L "$repo/artifacts/mac-alpha" ]] || { echo 'Symlink output parent rejected' >&2; exit 1; }
 out="$repo/artifacts/mac-alpha/$rid"
 [[ ! -e "$out" && ! -L "$out" ]] || { echo "Refusing to overwrite $out" >&2; exit 1; }
@@ -60,14 +61,19 @@ for size in 16 32 128 256 512; do
   sips -z "$twice" "$twice" "$source_png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/chih-icon.icns"
-"$app/Contents/MacOS/ChihDesktop" --alpha-manifest "$app"
-bash "$here/validate-bundle.sh" "$app" "$publish" "$rid" "$version" "$build" "$out/check-before-zip"
+# All resources/load commands are final before signing. Preflight compares raw publish bytes.
+bash "$here/validate-bundle.sh" "$app" "$publish" "$rid" "$version" "$build" "$out/check-before-sign"
+bash "$here/sign-alpha.sh" "$app" "$out/signing"
+# Do not write inside the bundle after signing (including manifests or diagnostics).
+manifest="$out/dist/ChihDesktop-macos-alpha-$version-$rid.bundle-manifest.json"
+"$app/Contents/MacOS/ChihDesktop" --alpha-manifest "$app" "$manifest"
+bash "$here/validate-bundle.sh" "$app" "$publish" "$rid" "$version" "$build" "$out/check-before-zip" "$manifest"
 
 zip="$out/dist/ChihDesktop-macos-alpha-$version-$rid.zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
-mkdir "$out/extracted"
-ditto -x -k "$zip" "$out/extracted"
-bash "$here/validate-bundle.sh" "$out/extracted/ChihDesktop.app" "$publish" "$rid" "$version" "$build" "$out/check-after-zip"
+extracted="$(mktemp -d "$out/extracted.XXXXXX")"
+ditto -x -k "$zip" "$extracted"
+bash "$here/validate-bundle.sh" "$extracted/ChihDesktop.app" "$publish" "$rid" "$version" "$build" "$out/check-after-zip" "$manifest"
 shasum -a 256 -c "$out/artwork-before.sha256"
 (
   cd "$out/dist"
@@ -76,7 +82,7 @@ shasum -a 256 -c "$out/artwork-before.sha256"
 {
   printf 'ChihDesktop macOS alpha\nVersion: %s\nBuild: %s\nRID: %s\n' "$version" "$build" "$rid"
   printf 'Source commit: %s\n' "${GITHUB_SHA:-local-working-tree}"
-  printf 'Self-contained; not Developer ID signed or notarized. No GUI validation performed.\n'
-  printf 'Validated before and after ditto ZIP extraction, including native --self-test.\n'
+  printf 'Self-contained; explicitly ad-hoc signed, NOT Developer ID signed or notarized. No GUI validation performed.\n'
+  printf 'codesign --verify --deep --strict passed before and after ditto ZIP extraction; spctl is diagnostic only.\n'
 } > "$out/dist/build-info.txt"
 echo "PASS: ready for artifact upload: $zip"

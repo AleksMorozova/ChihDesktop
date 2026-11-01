@@ -36,7 +36,7 @@ jobs:
         uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d # v5.0.0
         with:
           dotnet-version: '10.0.401'
-      - name: Build, package and validate unsigned alpha
+      - name: Build, ad-hoc sign, package and validate alpha
         env:
           TARGET_RID: ${{ matrix.rid }}
           ALPHA_BUILD: ${{ github.run_number }}.${{ github.run_attempt }}
@@ -49,7 +49,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
-      - name: Upload native load-command diagnostics
+      - name: Upload native and signature diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -57,6 +57,9 @@ jobs:
           path: |
             artifacts/mac-alpha/${{ matrix.rid }}/check-*/*.otool-*.txt
             artifacts/mac-alpha/${{ matrix.rid }}/check-*/*.records.txt
+            artifacts/mac-alpha/${{ matrix.rid }}/check-*/codesign-*.txt
+            artifacts/mac-alpha/${{ matrix.rid }}/check-*/spctl.txt
+            artifacts/mac-alpha/${{ matrix.rid }}/signing/*.txt
           if-no-files-found: warn
           retention-days: 14
       - name: Summarize scope
@@ -64,6 +67,7 @@ jobs:
           {
             echo '### macOS alpha'
             echo 'Validated a self-contained bundle and its extracted ZIP on the matching CPU runner.'
-            echo 'Unsigned / not notarized. No desktop GUI, Spaces, transparency or interaction acceptance was performed.'
+            echo 'Ad-hoc signed; deep/strict signature verification passed before and after ZIP extraction.'
+            echo 'NOT Developer ID signed or notarized; spctl is diagnostic only. No desktop GUI acceptance was performed.'
             echo 'No Windows projects, user profiles or GitHub Releases were touched.'
           } >> "$GITHUB_STEP_SUMMARY"
