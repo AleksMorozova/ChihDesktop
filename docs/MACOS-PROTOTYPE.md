@@ -49,7 +49,7 @@ an explicit WPF exclusion or another reviewed build-boundary change.
 - Avalonia.Desktop and Avalonia.Themes.Fluent pinned to **12.1.4**, compatible with
   net10.0. The desktop package/version was verified against its
   [NuGet listing](https://www.nuget.org/packages/Avalonia.Desktop/12.1.4).
-- Small borderless 160×130 logical-unit window, requested transparent background,
+- Small borderless 132×107.25 logical-unit window, requested transparent background,
   topmost by default, with an achieved-transparency diagnostic.
 - Existing Core CatBehaviorService reused; six existing clips / exact 15 PNGs
   decoded once. Time-based motion is separate from animation frame rate. Walking

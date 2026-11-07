@@ -26,7 +26,8 @@ internal sealed class MacPetWindow : Window
     public MacPetWindow()
     {
         Title = "Chih · macOS prototype";
-        Width = 160; Height = 130;
+        Width = 160 * PetDisplaySize.Scale;
+        Height = Width * PetDisplaySize.HeightPerWidth;
         CanResize = false;
         WindowDecorations = WindowDecorations.None;
         Background = Brushes.Transparent;
@@ -169,6 +170,7 @@ internal sealed class SpriteView : Control, IDisposable
     private int frame;
     public SpriteView()
     {
+        RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.HighQuality);
         foreach (var clip in PrototypeModel.Clips)
             clips.Add(clip.State, Enumerable.Range(0, clip.Count).Select(i =>
             {

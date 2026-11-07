@@ -16,7 +16,7 @@ dotnet run --project tools/ChihDesktop.Mac
 
 Left-click reacts; drag with the left button to reposition. Right-click (or a
 trackpad secondary click) opens Pause/Resume, Sleep, Wake, Pet, Reset, Topmost and
-Exit. The full cat canvas is 160×130 logical units, retaining its 320×260 sprite
+Exit. The full cat canvas is 132×107.25 logical units, retaining its 320×260 sprite
 aspect ratio. It walks using elapsed time; all six existing clips are embedded
 unchanged. No sprites or icon artwork are generated.
 

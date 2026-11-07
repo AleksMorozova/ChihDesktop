@@ -40,7 +40,8 @@ public sealed class CatWindow : Window
         configuration = config;
         AppBranding.Apply(this);
         Title = "ChihDesktop";
-        Width = config.CatSize; Height = config.CatSize * 130 / 160;
+        Width = config.CatSize * PetDisplaySize.Scale;
+        Height = Width * PetDisplaySize.HeightPerWidth;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
         AllowsTransparency = true;
@@ -49,6 +50,7 @@ public sealed class CatWindow : Window
         ShowActivated = false;
         Topmost = config.AlwaysOnTop;
         Content = animation;
+        RenderOptions.SetBitmapScalingMode(animation, BitmapScalingMode.HighQuality);
         positioning = new(this);
         ContextMenu = BuildMenu();
         MouseLeftButtonDown += OnPress;

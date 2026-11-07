@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using ChihDesktop;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -28,6 +29,19 @@ internal static class PetMenuSmoke
         var diagnostics = host.Services.GetRequiredService<AdminDiagnostics>();
         var cat = host.Services.GetRequiredService<CatWindow>(); cat.Show();
         await Wait(() => app.Windows.OfType<ReminderBubble>().Any(), "Actual CatWindow loaded with presenter");
+        var dpi = VisualTreeHelper.GetDpi(cat);
+        Check(Math.Abs(cat.ActualWidth - 132) <= 1 / dpi.DpiScaleX && Math.Abs(cat.ActualHeight - 107.25) <= 1 / dpi.DpiScaleY,
+            $"Default pet window is 17.5% smaller within native pixel rounding ({cat.ActualWidth:F2} × {cat.ActualHeight:F2})");
+        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        var sprite = (AnimationService)cat.Content;
+        var rendered = new RenderTargetBitmap((int)Math.Ceiling(sprite.ActualWidth), (int)Math.Ceiling(sprite.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+        rendered.Render(sprite);
+        int stride = rendered.PixelWidth * 4;
+        var pixels = new byte[stride * rendered.PixelHeight];
+        rendered.CopyPixels(pixels, stride, 0);
+        var alpha = Enumerable.Range(0, pixels.Length / 4).Select(i => pixels[i * 4 + 3]);
+        int minAlpha = alpha.Min(), maxAlpha = alpha.Max();
+        Check(minAlpha == 0 && maxAlpha >= 240, $"Scaled sprite renders with transparent padding and visible artwork (alpha {minAlpha}–{maxAlpha})");
         var bubble = app.Windows.OfType<ReminderBubble>().Single();
         int Completed() => File.Exists(diagnostics.LogPath) ? File.ReadLines(diagnostics.LogPath!).Count(line => JsonDocument.Parse(line).RootElement.GetProperty("stage").GetString() == "pet.command.complete") : 0;
         async Task Click(string title, bool preview = false)
